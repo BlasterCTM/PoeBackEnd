@@ -6,6 +6,7 @@ from sqlalchemy import text
 from app.core.config.settings import settings
 from app.core.database.database import init_db
 from app.api.dependencies.database import get_database
+from app.api.v1.endpoints import usuarios
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -14,6 +15,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Incluir los routers
+app.include_router(usuarios.router)
 
 # Inicializar la base de datos al arrancar la aplicación
 @app.on_event("startup")

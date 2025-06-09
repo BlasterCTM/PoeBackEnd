@@ -12,7 +12,15 @@ class BaseRepository(Generic[ModelType]):
         self.model = model
 
     def get(self, db: Session, id: int) -> Optional[ModelType]:
-        return db.query(self.model).filter(self.model.id == id).first()
+        # Intentar encontrar el campo de ID correcto
+        id_field = getattr(self.model, "id_" + self.model.__tablename__, None)
+        if id_field is None:
+            id_field = getattr(self.model, "id", None)
+        
+        if id_field is None:
+            raise ValueError(f"No se pudo encontrar el campo ID para el modelo {self.model.__name__}")
+            
+        return db.query(self.model).filter(id_field == id).first()
 
     def get_all(self, db: Session, skip: int = 0, limit: int = 100) -> List[ModelType]:
         return db.query(self.model).offset(skip).limit(limit).all()

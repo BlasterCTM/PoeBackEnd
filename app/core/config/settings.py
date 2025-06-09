@@ -6,6 +6,10 @@ class Settings(BaseSettings):
     PROJECT_VERSION: str = "1.0.0"
     PROJECT_DESCRIPTION: str = "API para el motor de optimización de rutas"
     
+    # Configuración de seguridad
+    SECRET_KEY: str = "tu_secret_key_super_secreta"  # Deberías cambiar esto en producción
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_HOST: str

@@ -1,0 +1,28 @@
+from sqlalchemy import Column, Integer, String, ForeignKey, Enum
+from sqlalchemy.ext.declarative import declarative_base
+import enum
+
+Base = declarative_base()
+
+class RolEnum(str, enum.Enum):
+    ADMINISTRADOR = "Administrador"
+    SUPERVISOR = "Supervisor"
+    REPONEDOR = "Reponedor"
+
+Base = declarative_base()
+
+class Rol(Base):
+    __tablename__ = "rol"
+    
+    id_rol = Column(Integer, primary_key=True, index=True)
+    nombre_rol = Column(String(50), nullable=False)
+
+class Usuario(Base):
+    __tablename__ = "usuario"
+    
+    id_usuario = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(100), nullable=False)
+    correo = Column(String(100), unique=True, nullable=False, index=True)
+    contraseña = Column(String(255), nullable=False)
+    rol_id = Column(Integer, ForeignKey("rol.id_rol"), nullable=False)
+    estado = Column(String(20), default="activo")
