@@ -36,9 +36,12 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        print(f"Decodificando token...")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print(f"Token decodificado: {payload}")
         email: str = payload.get("sub")
         if email is None:
+            print("No se encontró el email en el token")
             raise credentials_exception
     except JWTError:
         raise credentials_exception
@@ -53,11 +56,17 @@ async def get_current_admin_user(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_database)
 ):
+    print(f"Verificando permisos de administrador para usuario: {current_user.correo}")
     usuario_repo = UsuarioRepository()
     rol_admin = usuario_repo.get_rol_by_nombre(db, RolEnum.ADMINISTRADOR.value)
+    print(f"Rol admin encontrado: {rol_admin.id_rol if rol_admin else 'No encontrado'}")
+    print(f"Rol del usuario actual: {current_user.rol_id}")
+    
     if current_user.rol_id != rol_admin.id_rol:
+        print("El usuario no tiene permisos de administrador")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permisos de administrador"
         )
+    print("Usuario verificado como administrador")
     return current_user

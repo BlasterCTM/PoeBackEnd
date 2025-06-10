@@ -38,3 +38,9 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     correo: Optional[str] = None
+
+class ReponedorCreate(BaseModel):
+    nombre: str = Field(..., min_length=2, max_length=100)
+    correo: EmailStr
+    contraseña: str = Field(..., min_length=6)
+    estado: str = Field(default="activo", pattern="^(activo|inactivo)$")

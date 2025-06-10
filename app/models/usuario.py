@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Enum
+from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 import enum
 
@@ -9,13 +10,12 @@ class RolEnum(str, enum.Enum):
     SUPERVISOR = "Supervisor"
     REPONEDOR = "Reponedor"
 
-Base = declarative_base()
-
 class Rol(Base):
     __tablename__ = "rol"
     
     id_rol = Column(Integer, primary_key=True, index=True)
     nombre_rol = Column(String(50), nullable=False)
+    usuarios = relationship("Usuario", back_populates="rol")
 
 class Usuario(Base):
     __tablename__ = "usuario"
@@ -26,3 +26,5 @@ class Usuario(Base):
     contraseña = Column(String(255), nullable=False)
     rol_id = Column(Integer, ForeignKey("rol.id_rol"), nullable=False)
     estado = Column(String(20), default="activo")
+      # Relaciones
+    rol = relationship("Rol", back_populates="usuarios")

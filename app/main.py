@@ -1,12 +1,13 @@
 # app/main.py
 
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.config.settings import settings
 from app.core.database.database import init_db
 from app.api.dependencies.database import get_database
-from app.api.v1.endpoints import usuarios
+from app.api.v1.endpoints import usuarios, supervisor
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -16,8 +17,26 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# Configurar CORS
+origins = [
+    "http://localhost:3000",  # Para React
+    "http://localhost:4200",  # Para Angular
+    "http://127.0.0.1:5500",  # Para VS Code Live Server
+    "http://localhost:5173",  # Para Vite
+    "http://127.0.0.1:5173"   # Para Vite
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
 # Incluir los routers
 app.include_router(usuarios.router)
+app.include_router(supervisor.router)
 
 # Inicializar la base de datos al arrancar la aplicación
 @app.on_event("startup")

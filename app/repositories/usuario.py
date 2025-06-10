@@ -10,13 +10,14 @@ class UsuarioRepository(BaseRepository[Usuario]):
     def get_by_email(self, db: Session, email: str) -> Usuario:
         return db.query(Usuario).filter(Usuario.correo == email).first()
     
-    def create_usuario(self, db: Session, nombre: str, correo: str, contraseña: str, rol_id: int) -> Usuario:
+    def create_usuario(self, db: Session, nombre: str, correo: str, contraseña: str, rol_id: int, estado: str = "activo") -> Usuario:
         hashed_password = get_password_hash(contraseña)
         db_usuario = Usuario(
             nombre=nombre,
             correo=correo,
             contraseña=hashed_password,
-            rol_id=rol_id
+            rol_id=rol_id,
+            estado=estado
         )
         db.add(db_usuario)
         db.commit()

@@ -29,23 +29,27 @@ async def crear_usuario(
     # Inicializar el repositorio
     usuario_repo = UsuarioRepository()
     
-    # Verificar si el correo ya existe
-    if usuario_repo.get_by_email(db, usuario.correo):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="El correo electrónico ya está registrado"
-        )
-    
-    # Obtener el ID del rol correspondiente
-    rol = usuario_repo.get_rol_by_nombre(db, usuario.rol.value)
-    if not rol:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"El rol {usuario.rol.value} no existe"
-        )
-    
-    # Crear el usuario
     try:
+        print(f"Intentando crear usuario: {usuario.nombre} con rol {usuario.rol.value}")
+        
+        # Verificar si el correo ya existe
+        if usuario_repo.get_by_email(db, usuario.correo):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="El correo electrónico ya está registrado"
+            )
+        
+        # Obtener el ID del rol correspondiente
+        rol = usuario_repo.get_rol_by_nombre(db, usuario.rol.value)
+        print(f"Rol encontrado: {rol.id_rol if rol else 'No encontrado'}")
+        
+        if not rol:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El rol {usuario.rol.value} no existe"
+            )
+        
+        # Crear el usuario
         nuevo_usuario = usuario_repo.create_usuario(
             db=db,
             nombre=usuario.nombre,
@@ -53,14 +57,20 @@ async def crear_usuario(
             contraseña=usuario.contraseña,
             rol_id=rol.id_rol
         )
+        print(f"Usuario creado exitosamente con ID: {nuevo_usuario.id_usuario}")
+        
         return UsuarioResponse(
             mensaje="Usuario creado exitosamente",
             usuario=nuevo_usuario
         )
+    except HTTPException as e:
+        print(f"Error HTTP: {e.detail}")
+        raise e
     except Exception as e:
+        print(f"Error al crear usuario: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al crear el usuario"
+            detail=f"Error al crear el usuario: {str(e)}"
         )
 
 @router.post("/token", response_model=Token)
