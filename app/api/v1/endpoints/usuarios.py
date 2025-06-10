@@ -1,14 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
-from typing import Annotated, Union
+from typing import Annotated, Union, Optional
 from app.api.dependencies.database import get_database
-from app.schemas.usuario import UsuarioCreate, UsuarioResponse, Token, LoginSchema, LoginResponse
+from app.schemas.usuario import UsuarioCreate, UsuarioResponse, Token, LoginSchema, LoginResponse, ListaUsuariosResponse, UsuarioOutListado
 from app.repositories.usuario import UsuarioRepository
 from app.core.security.auth import create_access_token, get_current_admin_user
 from app.core.security.password import verify_password
 from datetime import timedelta
 from app.core.config.settings import settings
+from app.models.usuario import Usuario, RolEnum
 
 router = APIRouter(
     prefix="/usuarios",
@@ -156,4 +157,64 @@ async def login_for_access_token(
                 "message": "Error interno del servidor",
                 "detail": str(e)
             }
+        )
+
+@router.get(
+    "/",
+    response_model=ListaUsuariosResponse,
+    status_code=status.HTTP_200_OK,
+    description="Listar todos los usuarios (requiere ser administrador)"
+)
+async def listar_usuarios(
+    nombre: Optional[str] = None,
+    rol: Optional[str] = None,
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_admin_user)
+):
+    try:
+        # Verificar que el rol sea válido si se proporciona
+        if rol and rol not in [r.value for r in RolEnum]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Rol inválido. Roles permitidos: {', '.join([r.value for r in RolEnum])}"
+            )
+        
+        # Obtener usuarios
+        usuario_repo = UsuarioRepository()
+        usuarios = usuario_repo.listar_usuarios(db, nombre, rol)
+        
+        if not usuarios:
+            return ListaUsuariosResponse(
+                total=0,
+                usuarios=[],
+                mensaje="No se encontraron usuarios con los filtros especificados."
+            )
+        
+        # Transformar los usuarios a su formato de salida
+        usuarios_response = []
+        for usuario in usuarios:
+            rol = usuario_repo.get_rol_by_id(db, usuario.rol_id)
+            usuarios_response.append(
+                UsuarioOutListado(
+                    id_usuario=usuario.id_usuario,
+                    nombre=usuario.nombre,
+                    correo=usuario.correo,
+                    rol=rol.nombre_rol if rol else "Sin rol",
+                    estado=usuario.estado
+                )
+            )
+        
+        return ListaUsuariosResponse(
+            total=len(usuarios_response),
+            usuarios=usuarios_response,
+            mensaje="Usuarios listados exitosamente"
+        )
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error al listar usuarios: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al listar usuarios"
         )

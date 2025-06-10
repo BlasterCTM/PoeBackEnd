@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, constr, validator, Field
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from app.models.usuario import RolEnum
 
 class UsuarioBase(BaseModel):
@@ -54,3 +54,18 @@ class AuthError(BaseModel):
     detail: str
     error_type: str = Field(..., description="Tipo de error: 'not_found', 'invalid_password', 'inactive'")
     message: str
+
+class UsuarioOutListado(BaseModel):
+    id_usuario: int
+    nombre: str
+    correo: EmailStr
+    rol: str
+    estado: str
+
+    class Config:
+        from_attributes = True
+
+class ListaUsuariosResponse(BaseModel):
+    total: int
+    usuarios: List[UsuarioOutListado]
+    mensaje: Optional[str] = None
