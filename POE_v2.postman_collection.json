@@ -1,0 +1,171 @@
+{
+	"info": {
+		"_postman_id": "12345678-1234-1234-1234-123456789012",
+		"name": "POE - Path Optimization Engine v2",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"description": "Colección de endpoints para el sistema POE"
+	},
+	"item": [
+		{
+			"name": "Autenticación",
+			"item": [
+				{
+					"name": "Login Admin",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"correo\": \"admin@poe.com\",\n    \"contraseña\": \"admin123\"\n}",
+							"description": "Credenciales del administrador predeterminado"
+						},
+						"url": {
+							"raw": "http://localhost:8000/usuarios/token",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["usuarios", "token"]
+						},
+						"description": "Iniciar sesión como administrador.\n\nRespuesta exitosa:\n```json\n{\n    \"access_token\": \"...\",\n    \"token_type\": \"bearer\",\n    \"user_info\": {\n        \"id\": \"1\",\n        \"nombre\": \"Administrador\",\n        \"correo\": \"admin@poe.com\",\n        \"rol\": \"Administrador\",\n        \"estado\": \"activo\"\n    }\n}\n```\n\nPosibles errores:\n- 401: Credenciales inválidas\n- 401: Usuario inactivo\n- 401: Contraseña incorrecta"
+					},
+					"response": []
+				},
+				{
+					"name": "Login Supervisor",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"correo\": \"supervisor3@poe.com\",\n    \"contraseña\": \"supervisor123\"\n}",
+							"description": "Credenciales de un supervisor"
+						},
+						"url": {
+							"raw": "http://localhost:8000/usuarios/token",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["usuarios", "token"]
+						},
+						"description": "Iniciar sesión como supervisor.\n\nRespuesta exitosa:\n```json\n{\n    \"access_token\": \"...\",\n    \"token_type\": \"bearer\",\n    \"user_info\": {\n        \"id\": \"2\",\n        \"nombre\": \"Juan Supervisor\",\n        \"correo\": \"supervisor3@poe.com\",\n        \"rol\": \"Supervisor\",\n        \"estado\": \"activo\"\n    }\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Login Reponedor",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"correo\": \"reponedor@poe.com\",\n    \"contraseña\": \"reponedor123\"\n}",
+							"description": "Credenciales de un reponedor"
+						},
+						"url": {
+							"raw": "http://localhost:8000/usuarios/token",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["usuarios", "token"]
+						},
+						"description": "Iniciar sesión como reponedor.\n\nRespuesta exitosa:\n```json\n{\n    \"access_token\": \"...\",\n    \"token_type\": \"bearer\",\n    \"user_info\": {\n        \"id\": \"3\",\n        \"nombre\": \"Pedro Reponedor\",\n        \"correo\": \"reponedor@poe.com\",\n        \"rol\": \"Reponedor\",\n        \"estado\": \"activo\"\n    }\n}\n```"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Administrador",
+			"item": [
+				{
+					"name": "Crear Supervisor",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"nombre\": \"Nuevo Supervisor\",\n    \"correo\": \"nuevo.supervisor@poe.com\",\n    \"contraseña\": \"supervisor123\",\n    \"rol\": \"Supervisor\"\n}",
+							"description": "Datos para crear un nuevo supervisor"
+						},
+						"url": {
+							"raw": "http://localhost:8000/usuarios/",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["usuarios", ""]
+						},
+						"description": "Crear un nuevo supervisor. Requiere token de administrador.\n\nRespuesta exitosa:\n```json\n{\n    \"mensaje\": \"Usuario creado exitosamente\",\n    \"usuario\": {\n        \"id_usuario\": 4,\n        \"nombre\": \"Nuevo Supervisor\",\n        \"correo\": \"nuevo.supervisor@poe.com\",\n        \"rol_id\": 2,\n        \"estado\": \"activo\"\n    }\n}\n```"
+					}
+				}
+			]
+		},
+		{
+			"name": "Supervisor",
+			"item": [
+				{
+					"name": "Crear Reponedor",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{supervisor_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"nombre\": \"Nuevo Reponedor\",\n    \"correo\": \"nuevo.reponedor@poe.com\",\n    \"contraseña\": \"reponedor123\"\n}",
+							"description": "Datos para crear un nuevo reponedor"
+						},
+						"url": {
+							"raw": "http://localhost:8000/supervisor/reponedores",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["supervisor", "reponedores"]
+						},
+						"description": "Crear un nuevo reponedor. Requiere token de supervisor.\n\nRespuesta exitosa:\n```json\n{\n    \"mensaje\": \"Reponedor registrado exitosamente\",\n    \"usuario\": {\n        \"id_usuario\": 5,\n        \"nombre\": \"Nuevo Reponedor\",\n        \"correo\": \"nuevo.reponedor@poe.com\",\n        \"rol_id\": 3,\n        \"estado\": \"activo\"\n    }\n}\n```"
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "admin_token",
+			"value": ""
+		},
+		{
+			"key": "supervisor_token",
+			"value": ""
+		}
+	]
+}

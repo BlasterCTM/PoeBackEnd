@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, constr, validator, Field
-from typing import Optional
+from typing import Optional, Dict
 from app.models.usuario import RolEnum
 
 class UsuarioBase(BaseModel):
@@ -44,3 +44,13 @@ class ReponedorCreate(BaseModel):
     correo: EmailStr
     contraseña: str = Field(..., min_length=6)
     estado: str = Field(default="activo", pattern="^(activo|inactivo)$")
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user_info: Dict[str, str]
+
+class AuthError(BaseModel):
+    detail: str
+    error_type: str = Field(..., description="Tipo de error: 'not_found', 'invalid_password', 'inactive'")
+    message: str

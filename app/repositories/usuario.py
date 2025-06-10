@@ -26,3 +26,6 @@ class UsuarioRepository(BaseRepository[Usuario]):
 
     def get_rol_by_nombre(self, db: Session, nombre_rol: str) -> Rol:
         return db.query(Rol).filter(Rol.nombre_rol == nombre_rol).first()
+
+    def get_rol_by_id(self, db: Session, rol_id: int) -> Rol:
+        return db.query(Rol).filter(Rol.id_rol == rol_id).first()

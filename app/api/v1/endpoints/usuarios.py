@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Annotated, Union
 from app.api.dependencies.database import get_database
-from app.schemas.usuario import UsuarioCreate, UsuarioResponse, Token, LoginSchema
+from app.schemas.usuario import UsuarioCreate, UsuarioResponse, Token, LoginSchema, LoginResponse
 from app.repositories.usuario import UsuarioRepository
 from app.core.security.auth import create_access_token, get_current_admin_user
 from app.core.security.password import verify_password
@@ -73,7 +73,7 @@ async def crear_usuario(
             detail=f"Error al crear el usuario: {str(e)}"
         )
 
-@router.post("/token", response_model=Token)
+@router.post("/token", response_model=LoginResponse)
 async def login_for_access_token(
     login_data: LoginSchema,
     db: Session = Depends(get_database)
@@ -86,30 +86,74 @@ async def login_for_access_token(
         if not usuario:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Correo o contraseña incorrectos",
-                headers={"WWW-Authenticate": "Bearer"},
+                detail={
+                    "error_type": "not_found",
+                    "message": "El correo electrónico no está registrado",
+                    "detail": "No se encontró una cuenta con este correo electrónico"
+                }
+            )
+        
+        # Verificar si el usuario está activo
+        if usuario.estado != "activo":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "error_type": "inactive",
+                    "message": "La cuenta no está activa",
+                    "detail": "Esta cuenta ha sido desactivada. Contacte al administrador."
+                }
             )
         
         # Verificar contraseña
         if not verify_password(login_data.contraseña, usuario.contraseña):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Correo o contraseña incorrectos",
-                headers={"WWW-Authenticate": "Bearer"},
+                detail={
+                    "error_type": "invalid_password",
+                    "message": "La contraseña es incorrecta",
+                    "detail": "La contraseña proporcionada no es válida"
+                }
+            )
+        
+        # Obtener el rol del usuario
+        rol = usuario_repo.get_rol_by_id(db, usuario.rol_id)
+        if not rol:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al obtener el rol del usuario"
             )
         
         # Crear token de acceso
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": usuario.correo}, expires_delta=access_token_expires
+            data={
+                "sub": usuario.correo,
+                "rol": rol.nombre_rol
+            }, 
+            expires_delta=access_token_expires
         )
         
-        return {"access_token": access_token, "token_type": "bearer"}
+        return LoginResponse(
+            access_token=access_token,
+            token_type="bearer",
+            user_info={
+                "id": str(usuario.id_usuario),
+                "nombre": usuario.nombre,
+                "correo": usuario.correo,
+                "rol": rol.nombre_rol,
+                "estado": usuario.estado
+            }
+        )
+            
     except HTTPException as e:
         raise e
     except Exception as e:
-        print(f"Error en login: {str(e)}")  # Para debugging
+        print(f"Error en login: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno del servidor: {str(e)}"
+            detail={
+                "error_type": "server_error",
+                "message": "Error interno del servidor",
+                "detail": str(e)
+            }
         )
