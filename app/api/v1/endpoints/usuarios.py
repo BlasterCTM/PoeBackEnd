@@ -6,10 +6,10 @@ from app.api.dependencies.database import get_database
 from app.schemas.usuario import (
     UsuarioCreate, UsuarioResponse, Token, LoginSchema, 
     LoginResponse, ListaUsuariosResponse, UsuarioOutListado, 
-    UsuarioUpdate, UsuarioEstadoUpdate
+    UsuarioUpdate, UsuarioEstadoUpdate, UsuarioPerfilOut
 )
 from app.repositories.usuario import UsuarioRepository
-from app.core.security.auth import create_access_token, get_current_admin_user
+from app.core.security.auth import create_access_token, get_current_admin_user, get_current_user
 from app.core.security.password import verify_password
 from datetime import timedelta
 from app.core.config.settings import settings
@@ -358,4 +358,40 @@ async def actualizar_estado_usuario(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al actualizar estado del usuario"
+        )
+
+@router.get(
+    "/me",
+    response_model=UsuarioPerfilOut,
+    status_code=status.HTTP_200_OK,
+    description="Obtener el perfil del usuario autenticado"
+)
+async def obtener_perfil(
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_database)
+):
+    try:
+        usuario_repo = UsuarioRepository()
+        rol = usuario_repo.get_rol_by_id(db, current_user.rol_id)
+        
+        if not rol:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al obtener el rol del usuario"
+            )
+        
+        return UsuarioPerfilOut(
+            nombre=current_user.nombre,
+            correo=current_user.correo,
+            rol=rol.nombre_rol,
+            estado=current_user.estado
+        )
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error al obtener perfil: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al obtener el perfil"
         )

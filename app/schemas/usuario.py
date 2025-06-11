@@ -135,3 +135,20 @@ class ReponedoresDisponiblesResponse(BaseModel):
                 "mensaje": "Reponedores disponibles listados exitosamente"
             }
         }
+
+class UsuarioPerfilOut(BaseModel):
+    nombre: str
+    correo: EmailStr
+    rol: str
+    estado: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "nombre": "blast",
+                "correo": "blast@poe.cl",
+                "rol": "Reponedor",
+                "estado": "activo"
+            }
+        }
