@@ -69,3 +69,23 @@ class ListaUsuariosResponse(BaseModel):
     total: int
     usuarios: List[UsuarioOutListado]
     mensaje: Optional[str] = None
+
+class UsuarioUpdate(BaseModel):
+    nombre: Optional[str] = Field(None, min_length=2, max_length=100)
+    correo: Optional[EmailStr] = None
+    rol: Optional[RolEnum] = None
+
+    @validator('rol')
+    def validar_rol_update(cls, v):
+        if v is not None:
+            return v
+        return v
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "nombre": "Juan Pérez",
+                "correo": "juan.perez@ejemplo.com",
+                "rol": "Supervisor"
+            }
+        }

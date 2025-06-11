@@ -55,3 +55,31 @@ class UsuarioRepository(BaseRepository[Usuario]):
 
     def get_usuario_with_rol(self, db: Session, usuario_id: int) -> Optional[Usuario]:
         return db.query(Usuario).join(Rol).filter(Usuario.id_usuario == usuario_id).first()
+
+    def update_usuario(
+        self,
+        db: Session,
+        usuario: Usuario,
+        nombre: Optional[str] = None,
+        correo: Optional[str] = None,
+        rol_id: Optional[int] = None
+    ) -> Usuario:
+        # Actualizar solo los campos proporcionados
+        if nombre is not None:
+            usuario.nombre = nombre
+        if correo is not None:
+            # Verificar si el correo existe en otro usuario
+            existing_user = self.get_by_email(db, correo)
+            if existing_user and existing_user.id_usuario != usuario.id_usuario:
+                raise ValueError("El correo electrónico ya está registrado para otro usuario")
+            usuario.correo = correo
+        if rol_id is not None:
+            usuario.rol_id = rol_id
+
+        db.add(usuario)
+        db.commit()
+        db.refresh(usuario)
+        return usuario
+
+    def get_usuario_by_id(self, db: Session, usuario_id: int) -> Optional[Usuario]:
+        return db.query(Usuario).filter(Usuario.id_usuario == usuario_id).first()

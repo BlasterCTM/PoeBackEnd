@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Annotated, Union, Optional
 from app.api.dependencies.database import get_database
-from app.schemas.usuario import UsuarioCreate, UsuarioResponse, Token, LoginSchema, LoginResponse, ListaUsuariosResponse, UsuarioOutListado
+from app.schemas.usuario import UsuarioCreate, UsuarioResponse, Token, LoginSchema, LoginResponse, ListaUsuariosResponse, UsuarioOutListado, UsuarioUpdate
 from app.repositories.usuario import UsuarioRepository
 from app.core.security.auth import create_access_token, get_current_admin_user
 from app.core.security.password import verify_password
@@ -217,4 +217,74 @@ async def listar_usuarios(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al listar usuarios"
+        )
+
+@router.put(
+    "/{usuario_id}",
+    response_model=UsuarioResponse,
+    status_code=status.HTTP_200_OK,
+    description="Actualizar datos de un usuario (requiere ser administrador)"
+)
+async def actualizar_usuario(
+    usuario_id: int,
+    usuario_update: UsuarioUpdate,
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_admin_user)
+):
+    try:
+        # Obtener el usuario a actualizar
+        usuario_repo = UsuarioRepository()
+        usuario = usuario_repo.get_usuario_by_id(db, usuario_id)
+        
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No se encontró el usuario con ID: {usuario_id}"
+            )
+
+        # Preparar los datos para la actualización
+        update_data = {}
+        
+        if usuario_update.nombre is not None:
+            update_data["nombre"] = usuario_update.nombre
+            
+        if usuario_update.correo is not None:
+            update_data["correo"] = usuario_update.correo
+            
+        if usuario_update.rol is not None:
+            # Obtener el ID del nuevo rol
+            nuevo_rol = usuario_repo.get_rol_by_nombre(db, usuario_update.rol.value)
+            if not nuevo_rol:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El rol {usuario_update.rol.value} no existe"
+                )
+            update_data["rol_id"] = nuevo_rol.id_rol
+
+        try:
+            # Actualizar el usuario
+            usuario_actualizado = usuario_repo.update_usuario(
+                db=db,
+                usuario=usuario,
+                **update_data
+            )
+            
+            return UsuarioResponse(
+                mensaje="Usuario actualizado exitosamente",
+                usuario=usuario_actualizado
+            )
+            
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(e)
+            )
+            
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error al actualizar usuario: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al actualizar usuario"
         )
