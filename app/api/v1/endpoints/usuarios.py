@@ -3,7 +3,11 @@ from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Annotated, Union, Optional
 from app.api.dependencies.database import get_database
-from app.schemas.usuario import UsuarioCreate, UsuarioResponse, Token, LoginSchema, LoginResponse, ListaUsuariosResponse, UsuarioOutListado, UsuarioUpdate
+from app.schemas.usuario import (
+    UsuarioCreate, UsuarioResponse, Token, LoginSchema, 
+    LoginResponse, ListaUsuariosResponse, UsuarioOutListado, 
+    UsuarioUpdate, UsuarioEstadoUpdate
+)
 from app.repositories.usuario import UsuarioRepository
 from app.core.security.auth import create_access_token, get_current_admin_user
 from app.core.security.password import verify_password
@@ -287,4 +291,71 @@ async def actualizar_usuario(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al actualizar usuario"
+        )
+
+@router.patch(
+    "/{usuario_id}/estado",
+    response_model=UsuarioResponse,
+    status_code=status.HTTP_200_OK,
+    description="Activar o desactivar un usuario (requiere ser administrador)"
+)
+async def actualizar_estado_usuario(
+    usuario_id: int,
+    estado_update: UsuarioEstadoUpdate,
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_admin_user)
+):
+    try:
+        # Obtener el usuario a actualizar
+        usuario_repo = UsuarioRepository()
+        usuario = usuario_repo.get_usuario_by_id(db, usuario_id)
+        
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No se encontró el usuario con ID: {usuario_id}"
+            )
+
+        # No permitir que un administrador se desactive a sí mismo
+        if usuario.id_usuario == current_user.id_usuario:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No puedes cambiar tu propio estado"
+            )
+
+        # Verificar si el estado es diferente al actual
+        if usuario.estado == estado_update.estado:
+            return UsuarioResponse(
+                mensaje=f"El usuario ya se encuentra {estado_update.estado}",
+                usuario=usuario
+            )
+
+        try:
+            # Actualizar el estado
+            usuario_actualizado = usuario_repo.update_estado(
+                db=db,
+                usuario=usuario,
+                estado=estado_update.estado
+            )
+            
+            mensaje = "Usuario activado correctamente" if estado_update.estado == "activo" else "Usuario desactivado correctamente"
+            
+            return UsuarioResponse(
+                mensaje=mensaje,
+                usuario=usuario_actualizado
+            )
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error al actualizar el estado del usuario: {str(e)}"
+            )
+            
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error al actualizar estado de usuario: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al actualizar estado del usuario"
         )

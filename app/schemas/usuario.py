@@ -89,3 +89,13 @@ class UsuarioUpdate(BaseModel):
                 "rol": "Supervisor"
             }
         }
+
+class UsuarioEstadoUpdate(BaseModel):
+    estado: str = Field(..., pattern="^(activo|inactivo)$", description="Estado del usuario: activo o inactivo")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "estado": "inactivo"
+            }
+        }

@@ -83,3 +83,15 @@ class UsuarioRepository(BaseRepository[Usuario]):
 
     def get_usuario_by_id(self, db: Session, usuario_id: int) -> Optional[Usuario]:
         return db.query(Usuario).filter(Usuario.id_usuario == usuario_id).first()
+
+    def update_estado(
+        self,
+        db: Session,
+        usuario: Usuario,
+        estado: str
+    ) -> Usuario:
+        usuario.estado = estado
+        db.add(usuario)
+        db.commit()
+        db.refresh(usuario)
+        return usuario
