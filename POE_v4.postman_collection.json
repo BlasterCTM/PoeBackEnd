@@ -1,0 +1,219 @@
+{
+    "info": {
+        "_postman_id": "12345678-1234-1234-1234-123456789012",
+        "name": "POE - Path Optimization Engine v4",
+        "description": "Colección de endpoints para el sistema POE - Gestión de Reponedores",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "admin_token",
+            "value": ""
+        },
+        {
+            "key": "supervisor_token",
+            "value": ""
+        }
+    ],
+    "item": [
+        {
+            "name": "1. Autenticación",
+            "item": [
+                {
+                    "name": "Login Admin",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"correo\": \"admin@poe.com\",\n    \"contraseña\": \"admin123\"\n}"
+                        },
+                        "url": {
+                            "raw": "http://localhost:8000/usuarios/token",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8000",
+                            "path": ["usuarios", "token"]
+                        },
+                        "description": "Iniciar sesión como administrador para poder crear supervisores.\n\nRespuesta exitosa:\n```json\n{\n    \"access_token\": \"...\",\n    \"token_type\": \"bearer\",\n    \"user_info\": {\n        \"id\": \"1\",\n        \"nombre\": \"Administrador\",\n        \"correo\": \"admin@poe.com\",\n        \"rol\": \"Administrador\",\n        \"estado\": \"activo\"\n    }\n}\n```\n\nGuardar el token en la variable {{admin_token}}"
+                    }
+                },
+                {
+                    "name": "Login Supervisor",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"correo\": \"supervisor.test@poe.com\",\n    \"contraseña\": \"supervisor123\"\n}"
+                        },
+                        "url": {
+                            "raw": "http://localhost:8000/usuarios/token",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8000",
+                            "path": ["usuarios", "token"]
+                        },
+                        "description": "Iniciar sesión como supervisor para gestionar reponedores.\n\nGuardar el token en la variable {{supervisor_token}}"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "2. Creación de Usuarios",
+            "item": [
+                {
+                    "name": "Crear Supervisor",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{admin_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"nombre\": \"Supervisor Test\",\n    \"correo\": \"supervisor.test@poe.com\",\n    \"contraseña\": \"supervisor123\",\n    \"rol\": \"Supervisor\"\n}"
+                        },
+                        "url": {
+                            "raw": "http://localhost:8000/usuarios",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8000",
+                            "path": ["usuarios"]
+                        },
+                        "description": "Crear un nuevo supervisor desde una cuenta de administrador.\n\nRequiere token de administrador."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "3. Gestión de Reponedores",
+            "item": [
+                {
+                    "name": "Crear Reponedor",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{supervisor_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"nombre\": \"Reponedor Test\",\n    \"correo\": \"reponedor.test@poe.com\",\n    \"contraseña\": \"reponedor123\"\n}"
+                        },
+                        "url": {
+                            "raw": "http://localhost:8000/supervisor/reponedores",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8000",
+                            "path": ["supervisor", "reponedores"]
+                        },
+                        "description": "Crear un nuevo reponedor desde una cuenta de supervisor.\n\nRequiere token de supervisor."
+                    }
+                },
+                {
+                    "name": "Listar Reponedores Asignados",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{supervisor_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "http://localhost:8000/supervisor/reponedores",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8000",
+                            "path": ["supervisor", "reponedores"]
+                        },
+                        "description": "Obtener la lista de reponedores asignados al supervisor actual.\n\nRequiere token de supervisor."
+                    }
+                },
+                {
+                    "name": "Listar Reponedores Disponibles",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{supervisor_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "http://localhost:8000/supervisor/reponedores/disponibles",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8000",
+                            "path": ["supervisor", "reponedores", "disponibles"]
+                        },
+                        "description": "Obtener la lista de reponedores disponibles para asignar.\n\nRequiere token de supervisor."
+                    }
+                },
+                {
+                    "name": "Asignar Reponedor",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{supervisor_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "http://localhost:8000/supervisor/reponedores/{{reponedor_id}}/asignar",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8000",
+                            "path": ["supervisor", "reponedores", "{{reponedor_id}}", "asignar"]
+                        },
+                        "description": "Asignar un reponedor al supervisor actual.\n\nReemplazar {{reponedor_id}} con el ID del reponedor a asignar.\nRequiere token de supervisor."
+                    }
+                },
+                {
+                    "name": "Desasignar Reponedor",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{supervisor_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "http://localhost:8000/supervisor/reponedores/{{reponedor_id}}/desasignar",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8000",
+                            "path": ["supervisor", "reponedores", "{{reponedor_id}}", "desasignar"]
+                        },
+                        "description": "Desasignar un reponedor del supervisor actual.\n\nReemplazar {{reponedor_id}} con el ID del reponedor a desasignar.\nRequiere token de supervisor."
+                    }
+                }
+            ]
+        }
+    ]
+}

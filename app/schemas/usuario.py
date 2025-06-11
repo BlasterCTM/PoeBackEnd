@@ -99,3 +99,39 @@ class UsuarioEstadoUpdate(BaseModel):
                 "estado": "inactivo"
             }
         }
+
+class ReponedorListado(BaseModel):
+    id: int = Field(alias="id_usuario")
+    nombre: str
+    correo: EmailStr
+    estado: str
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+class ReponedoresResponse(BaseModel):
+    total: int
+    reponedores: List[ReponedorListado]
+    mensaje: Optional[str] = None
+
+class ReponedoresDisponiblesResponse(BaseModel):
+    total: int
+    reponedores: List[ReponedorListado]
+    mensaje: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "total": 2,
+                "reponedores": [
+                    {
+                        "id": 12,
+                        "nombre": "Juan Pérez",
+                        "correo": "juan@correo.com",
+                        "estado": "activo"
+                    }
+                ],
+                "mensaje": "Reponedores disponibles listados exitosamente"
+            }
+        }

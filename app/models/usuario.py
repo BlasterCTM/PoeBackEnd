@@ -1,9 +1,9 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, ForeignKey, Enum, DateTime
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
 import enum
-
-Base = declarative_base()
+from app.core.database.database import Base
+from app.models.base import BaseModel
 
 class RolEnum(str, enum.Enum):
     ADMINISTRADOR = "Administrador"
@@ -26,5 +26,6 @@ class Usuario(Base):
     contraseña = Column(String(255), nullable=False)
     rol_id = Column(Integer, ForeignKey("rol.id_rol"), nullable=False)
     estado = Column(String(20), default="activo")
-      # Relaciones
+    
+    # Relaciones
     rol = relationship("Rol", back_populates="usuarios")
