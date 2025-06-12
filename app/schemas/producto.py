@@ -22,3 +22,28 @@ class ProductoOut(ProductoBase):
     class Config:
         from_attributes = True
         orm_mode = True
+
+class ProductoUpdate(BaseModel):
+    nombre: Optional[str] = Field(None, min_length=1, max_length=100)
+    categoria: Optional[str] = Field(None, min_length=1, max_length=50)
+
+    @validator('nombre')
+    def nombre_no_vacio(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError('El nombre no puede estar vacío')
+        return v
+
+    @validator('categoria')
+    def categoria_no_vacia(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError('La categoría no puede estar vacía')
+        return v
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "nombre": "Leche descremada 1L",
+                "categoria": "Lácteos"
+            }
+        }

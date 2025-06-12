@@ -31,28 +31,56 @@ def test_login_admin(context):
     context["admin_token"] = data["access_token"]
 
 def test_crear_supervisor(context):
-    """Test: Crear un supervisor de prueba"""
-    assert context["admin_token"] is not None        supervisor_data = {
-            "nombre": "Supervisor Test",
-            "correo": "supervisor.test@poe.com",
-            "contraseña": "supervisor123",
-            "rol": "Supervisor",
-            "estado": "activo"
-        }
-    
+    """Test: Crear un supervisor de prueba (idempotente)"""
+    assert context["admin_token"] is not None
+    supervisor_data = {
+        "nombre": "Supervisor Test",
+        "correo": "supervisor.test@poe.com",
+        "contraseña": "supervisor123",
+        "rol": "Supervisor",
+        "estado": "activo"
+    }
     headers = {
         "Authorization": f"Bearer {context['admin_token']}"
     }
-    
+    # Intentar crear, si ya existe, solo continuar
     response = requests.post(
         f"{context['base_url']}/usuarios/",
         json=supervisor_data,
         headers=headers
     )
-    
+    if response.status_code == 409:
+        # Ya existe, hacer login para obtener el token
+        login_data = {
+            "correo": "supervisor.test@poe.com",
+            "contraseña": "supervisor123"
+        }
+        login_resp = requests.post(
+            f"{context['base_url']}/usuarios/token",
+            json=login_data
+        )
+        assert login_resp.status_code == 200
+        data = login_resp.json()
+        assert "access_token" in data
+        context["supervisor_token"] = data["access_token"]
+        return
     assert response.status_code == 201
     data = response.json()
     assert data["usuario"]["correo"] == "supervisor.test@poe.com"
+
+    # Login para obtener el token
+    login_data = {
+        "correo": "supervisor.test@poe.com",
+        "contraseña": "supervisor123"
+    }
+    login_resp = requests.post(
+        f"{context['base_url']}/usuarios/token",
+        json=login_data
+    )
+    assert login_resp.status_code == 200
+    data = login_resp.json()
+    assert "access_token" in data
+    context["supervisor_token"] = data["access_token"]
 
 def test_login_supervisor(context):
     """Test: Login como supervisor"""
@@ -72,26 +100,36 @@ def test_login_supervisor(context):
     context["supervisor_token"] = data["access_token"]
 
 def test_crear_reponedor(context):
-    """Test: Crear un nuevo reponedor"""
+    """Test: Crear un nuevo reponedor (idempotente)"""
     assert context["supervisor_token"] is not None
-    
     reponedor_data = {
         "nombre": "Reponedor Test",
         "correo": "reponedor.test@poe.com",
         "contraseña": "reponedor123",
         "estado": "activo"
     }
-    
     headers = {
         "Authorization": f"Bearer {context['supervisor_token']}"
     }
-    
     response = requests.post(
         f"{context['base_url']}/supervisor/reponedores",
         json=reponedor_data,
         headers=headers
     )
-    
+    if response.status_code == 409:
+        # Ya existe, buscar su id
+        response_list = requests.get(
+            f"{context['base_url']}/supervisor/reponedores/disponibles",
+            headers=headers
+        )
+        assert response_list.status_code == 200
+        data = response_list.json()
+        for r in data["reponedores"]:
+            if r["correo"] == "reponedor.test@poe.com":
+                context["reponedor_id"] = r["id_usuario"]
+                break
+        assert context["reponedor_id"] is not None
+        return
     assert response.status_code == 201
     data = response.json()
     assert data["mensaje"] == "Reponedor registrado exitosamente"
@@ -150,7 +188,7 @@ def test_listar_reponedores_asignados(context):
     assert response.status_code == 200
     data = response.json()
     assert "reponedores" in data
-    assert any(r["id"] == context["reponedor_id"] for r in data["reponedores"])
+    assert any(r["id_usuario"] == context["reponedor_id"] for r in data["reponedores"])
 
 def test_desasignar_reponedor(context):
     """Test: Desasignar reponedor"""
@@ -178,5 +216,5 @@ def test_desasignar_reponedor(context):
     
     assert response.status_code == 200
     data = response.json()
-    assert not any(r["id"] == context["reponedor_id"] for r in data["reponedores"])
+    assert not any(r["id_usuario"] == context["reponedor_id"] for r in data["reponedores"])
 
