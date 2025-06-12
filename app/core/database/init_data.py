@@ -8,18 +8,17 @@ def init_roles_and_admin():
     try:
         print("=== Iniciando inicialización de la base de datos ===")
         print("1. Iniciando creación de roles...")
-        # Crear roles si no existen
-        roles = {
-            RolEnum.ADMINISTRADOR.value: "Administrador del sistema",
-            RolEnum.SUPERVISOR.value: "Supervisor de reposición",
-            RolEnum.REPONEDOR.value: "Reponedor de productos"
-        }
+        roles = [
+            RolEnum.ADMINISTRADOR.value,
+            RolEnum.SUPERVISOR.value,
+            RolEnum.REPONEDOR.value
+        ]
         
-        for nombre_rol, descripcion in roles.items():
+        for nombre_rol in roles:
             existing_rol = db_session.query(Rol).filter(Rol.nombre_rol == nombre_rol).first()
             if not existing_rol:
                 print(f"Creando rol: {nombre_rol}")
-                rol = Rol(nombre_rol=nombre_rol, descripcion=descripcion)
+                rol = Rol(nombre_rol=nombre_rol)
                 db_session.add(rol)
                 db_session.commit()
             else:
