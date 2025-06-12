@@ -48,7 +48,6 @@ class ReponedorCreate(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str
-    user_info: Dict[str, str]
 
 class AuthError(BaseModel):
     detail: str

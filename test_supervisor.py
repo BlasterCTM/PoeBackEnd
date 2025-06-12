@@ -1,258 +1,182 @@
 import requests
 import json
-from typing import Dict, Optional
+import pytest
+from typing import Dict
 
-class TestSupervisor:
-    def __init__(self):
-        self.base_url = "http://localhost:8000"
-        self.admin_token = None
-        self.supervisor_token = None
-        self.reponedor_id = None
+@pytest.fixture(scope="module")
+def context():
+    """Fixture para compartir el contexto entre las pruebas"""
+    return {
+        "base_url": "http://localhost:8000",
+        "admin_token": None,
+        "supervisor_token": None,
+        "reponedor_id": None
+    }
+
+def test_login_admin(context):
+    """Test: Login como administrador"""
+    login_data = {
+        "correo": "admin@poe.com",
+        "contraseña": "admin123"
+    }
     
-    def login_admin(self) -> Optional[str]:
-        """Login como administrador para crear supervisor"""
-        login_data = {
-            "correo": "admin@poe.com",
-            "contraseña": "admin123"
-        }
-        
-        response = requests.post(
-            f"{self.base_url}/usuarios/token",
-            json=login_data
-        )
-        
-        if response.status_code == 200:
-            self.admin_token = response.json()["access_token"]
-            print("✅ Login administrador exitoso")
-            return self.admin_token
-        else:
-            print(f"❌ Error en login administrador: {response.json()}")
-            return None
+    response = requests.post(
+        f"{context['base_url']}/usuarios/token",
+        json=login_data
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    context["admin_token"] = data["access_token"]
 
-    def crear_supervisor(self) -> Optional[Dict]:
-        """Crear un supervisor de prueba"""
-        if not self.admin_token:
-            print("❌ Se requiere token de administrador")
-            return None
-            
-        supervisor_data = {
+def test_crear_supervisor(context):
+    """Test: Crear un supervisor de prueba"""
+    assert context["admin_token"] is not None        supervisor_data = {
             "nombre": "Supervisor Test",
             "correo": "supervisor.test@poe.com",
             "contraseña": "supervisor123",
-            "rol": "Supervisor"
-        }
-        
-        headers = {
-            "Authorization": f"Bearer {self.admin_token}"
-        }
-        
-        response = requests.post(
-            f"{self.base_url}/usuarios/",
-            json=supervisor_data,
-            headers=headers
-        )
-        
-        if response.status_code == 201:
-            print("✅ Supervisor creado exitosamente")
-            return response.json()
-        else:
-            print(f"❌ Error al crear supervisor: {response.json()}")
-            return None
-
-    def login_supervisor(self) -> Optional[str]:
-        """Login como supervisor"""
-        login_data = {
-            "correo": "supervisor.test@poe.com",
-            "contraseña": "supervisor123"
-        }
-        
-        response = requests.post(
-            f"{self.base_url}/usuarios/token",
-            json=login_data
-        )
-        
-        if response.status_code == 200:
-            self.supervisor_token = response.json()["access_token"]
-            print("✅ Login supervisor exitoso")
-            return self.supervisor_token
-        else:
-            print(f"❌ Error en login supervisor: {response.json()}")
-            return None
-
-    def crear_reponedor(self) -> Optional[Dict]:
-        """Crear un reponedor de prueba"""
-        if not self.supervisor_token:
-            print("❌ Se requiere token de supervisor")
-            return None
-            
-        reponedor_data = {
-            "nombre": "Reponedor Test",
-            "correo": "reponedor.test@poe.com",
-            "contraseña": "reponedor123",
+            "rol": "Supervisor",
             "estado": "activo"
         }
-        
-        headers = {
-            "Authorization": f"Bearer {self.supervisor_token}"
-        }
-        
-        response = requests.post(
-            f"{self.base_url}/supervisor/reponedores",
-            json=reponedor_data,
-            headers=headers
-        )
-        
-        if response.status_code == 201:
-            print("✅ Reponedor creado exitosamente")
-            self.reponedor_id = response.json()["usuario"]["id_usuario"]
-            return response.json()
-        else:
-            print(f"❌ Error al crear reponedor: {response.json()}")
-            return None
+    
+    headers = {
+        "Authorization": f"Bearer {context['admin_token']}"
+    }
+    
+    response = requests.post(
+        f"{context['base_url']}/usuarios/",
+        json=supervisor_data,
+        headers=headers
+    )
+    
+    assert response.status_code == 201
+    data = response.json()
+    assert data["usuario"]["correo"] == "supervisor.test@poe.com"
 
-    def listar_reponedores_disponibles(self) -> Optional[Dict]:
-        """Listar reponedores disponibles para asignar"""
-        if not self.supervisor_token:
-            print("❌ Se requiere token de supervisor")
-            return None
-            
-        headers = {
-            "Authorization": f"Bearer {self.supervisor_token}"
-        }
-        
-        response = requests.get(
-            f"{self.base_url}/supervisor/reponedores/disponibles",
-            headers=headers
-        )
-        
-        if response.status_code == 200:
-            print("✅ Lista de reponedores disponibles obtenida")
-            return response.json()
-        else:
-            print(f"❌ Error al listar reponedores disponibles: {response.json()}")
-            return None
+def test_login_supervisor(context):
+    """Test: Login como supervisor"""
+    login_data = {
+        "correo": "supervisor.test@poe.com",
+        "contraseña": "supervisor123"
+    }
+    
+    response = requests.post(
+        f"{context['base_url']}/usuarios/token",
+        json=login_data
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    context["supervisor_token"] = data["access_token"]
 
-    def asignar_reponedor(self, reponedor_id: int) -> Optional[Dict]:
-        """Asignar un reponedor al supervisor"""
-        if not self.supervisor_token:
-            print("❌ Se requiere token de supervisor")
-            return None
-            
-        headers = {
-            "Authorization": f"Bearer {self.supervisor_token}"
-        }
-        
-        response = requests.post(
-            f"{self.base_url}/supervisor/reponedores/{reponedor_id}/asignar",
-            headers=headers
-        )
-        
-        if response.status_code == 200:
-            print("✅ Reponedor asignado exitosamente")
-            return response.json()
-        else:
-            print(f"❌ Error al asignar reponedor: {response.json()}")
-            return None
+def test_crear_reponedor(context):
+    """Test: Crear un nuevo reponedor"""
+    assert context["supervisor_token"] is not None
+    
+    reponedor_data = {
+        "nombre": "Reponedor Test",
+        "correo": "reponedor.test@poe.com",
+        "contraseña": "reponedor123",
+        "estado": "activo"
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {context['supervisor_token']}"
+    }
+    
+    response = requests.post(
+        f"{context['base_url']}/supervisor/reponedores",
+        json=reponedor_data,
+        headers=headers
+    )
+    
+    assert response.status_code == 201
+    data = response.json()
+    assert data["mensaje"] == "Reponedor registrado exitosamente"
+    assert data["usuario"]["correo"] == "reponedor.test@poe.com"
+    context["reponedor_id"] = data["usuario"]["id_usuario"]
 
-    def listar_reponedores_asignados(self) -> Optional[Dict]:
-        """Listar reponedores asignados al supervisor"""
-        if not self.supervisor_token:
-            print("❌ Se requiere token de supervisor")
-            return None
-            
-        headers = {
-            "Authorization": f"Bearer {self.supervisor_token}"
-        }
-        
-        response = requests.get(
-            f"{self.base_url}/supervisor/reponedores",
-            headers=headers
-        )
-        
-        if response.status_code == 200:
-            print("✅ Lista de reponedores asignados obtenida")
-            return response.json()
-        else:
-            print(f"❌ Error al listar reponedores asignados: {response.json()}")
-            return None
+def test_listar_reponedores_disponibles(context):
+    """Test: Listar reponedores disponibles"""
+    assert context["supervisor_token"] is not None
+    
+    headers = {
+        "Authorization": f"Bearer {context['supervisor_token']}"
+    }
+    
+    response = requests.get(
+        f"{context['base_url']}/supervisor/reponedores/disponibles",
+        headers=headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "reponedores" in data
+    assert isinstance(data["reponedores"], list)
 
-    def desasignar_reponedor(self, reponedor_id: int) -> Optional[Dict]:
-        """Desasignar un reponedor del supervisor"""
-        if not self.supervisor_token:
-            print("❌ Se requiere token de supervisor")
-            return None
-            
-        headers = {
-            "Authorization": f"Bearer {self.supervisor_token}"
-        }
-        
-        response = requests.delete(
-            f"{self.base_url}/supervisor/reponedores/{reponedor_id}/desasignar",
-            headers=headers
-        )
-        
-        if response.status_code == 200:
-            print("✅ Reponedor desasignado exitosamente")
-            return response.json()
-        else:
-            print(f"❌ Error al desasignar reponedor: {response.json()}")
-            return None
+def test_asignar_reponedor(context):
+    """Test: Asignar reponedor"""
+    assert context["supervisor_token"] is not None
+    assert context["reponedor_id"] is not None
+    
+    headers = {
+        "Authorization": f"Bearer {context['supervisor_token']}"
+    }
+    
+    response = requests.post(
+        f"{context['base_url']}/supervisor/reponedores/{context['reponedor_id']}/asignar",
+        headers=headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mensaje"] == "Reponedor asignado exitosamente"
 
-def run_tests():
-    print("\n=== Iniciando pruebas de gestión de reponedores ===\n")
+def test_listar_reponedores_asignados(context):
+    """Test: Listar reponedores asignados"""
+    assert context["supervisor_token"] is not None
     
-    test = TestSupervisor()
+    headers = {
+        "Authorization": f"Bearer {context['supervisor_token']}"
+    }
     
-    # 1. Login como administrador
-    if not test.login_admin():
-        return
+    response = requests.get(
+        f"{context['base_url']}/supervisor/reponedores",
+        headers=headers
+    )
     
-    # 2. Crear supervisor de prueba
-    if not test.crear_supervisor():
-        return
-    
-    # 3. Login como supervisor
-    if not test.login_supervisor():
-        return
-    
-    # 4. Crear reponedor
-    reponedor = test.crear_reponedor()
-    if not reponedor:
-        return
-    
-    print("\n--- Reponedor creado:", json.dumps(reponedor, indent=2))
-    
-    # 5. Listar reponedores disponibles
-    disponibles = test.listar_reponedores_disponibles()
-    if not disponibles:
-        return
-    
-    print("\n--- Reponedores disponibles:", json.dumps(disponibles, indent=2))
-    
-    # 6. Asignar reponedor
-    if test.reponedor_id:
-        asignacion = test.asignar_reponedor(test.reponedor_id)
-        if not asignacion:
-            return
-        
-        print("\n--- Asignación:", json.dumps(asignacion, indent=2))
-    
-    # 7. Listar reponedores asignados
-    asignados = test.listar_reponedores_asignados()
-    if not asignados:
-        return
-    
-    print("\n--- Reponedores asignados:", json.dumps(asignados, indent=2))
-    
-    # 8. Desasignar reponedor
-    if test.reponedor_id:
-        desasignacion = test.desasignar_reponedor(test.reponedor_id)
-        if not desasignacion:
-            return
-        
-        print("\n--- Desasignación:", json.dumps(desasignacion, indent=2))
-    
-    print("\n=== Pruebas completadas exitosamente ===\n")
+    assert response.status_code == 200
+    data = response.json()
+    assert "reponedores" in data
+    assert any(r["id"] == context["reponedor_id"] for r in data["reponedores"])
 
-if __name__ == "__main__":
-    run_tests()
+def test_desasignar_reponedor(context):
+    """Test: Desasignar reponedor"""
+    assert context["supervisor_token"] is not None
+    assert context["reponedor_id"] is not None
+    
+    headers = {
+        "Authorization": f"Bearer {context['supervisor_token']}"
+    }
+    
+    response = requests.delete(
+        f"{context['base_url']}/supervisor/reponedores/{context['reponedor_id']}/desasignar",
+        headers=headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mensaje"] == "Reponedor desasignado exitosamente"
+    
+    # Verificar que ya no aparezca en la lista
+    response = requests.get(
+        f"{context['base_url']}/supervisor/reponedores",
+        headers=headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert not any(r["id"] == context["reponedor_id"] for r in data["reponedores"])
+

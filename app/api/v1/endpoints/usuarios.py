@@ -83,85 +83,37 @@ async def login_for_access_token(
     login_data: LoginSchema,
     db: Session = Depends(get_database)
 ):
-    try:
-        # Buscar usuario por correo
-        usuario_repo = UsuarioRepository()
-        usuario = usuario_repo.get_by_email(db, login_data.correo)
-        
-        if not usuario:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "error_type": "not_found",
-                    "message": "El correo electrónico no está registrado",
-                    "detail": "No se encontró una cuenta con este correo electrónico"
-                }
-            )
-        
-        # Verificar si el usuario está activo
-        if usuario.estado != "activo":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "error_type": "inactive",
-                    "message": "La cuenta no está activa",
-                    "detail": "Esta cuenta ha sido desactivada. Contacte al administrador."
-                }
-            )
-        
-        # Verificar contraseña
-        if not verify_password(login_data.contraseña, usuario.contraseña):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "error_type": "invalid_password",
-                    "message": "La contraseña es incorrecta",
-                    "detail": "La contraseña proporcionada no es válida"
-                }
-            )
-        
-        # Obtener el rol del usuario
-        rol = usuario_repo.get_rol_by_id(db, usuario.rol_id)
-        if not rol:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al obtener el rol del usuario"
-            )
-        
-        # Crear token de acceso
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={
-                "sub": usuario.correo,
-                "rol": rol.nombre_rol
-            }, 
-            expires_delta=access_token_expires
-        )
-        
-        return LoginResponse(
-            access_token=access_token,
-            token_type="bearer",
-            user_info={
-                "id": str(usuario.id_usuario),
-                "nombre": usuario.nombre,
-                "correo": usuario.correo,
-                "rol": rol.nombre_rol,
-                "estado": usuario.estado
-            }
-        )
-            
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        print(f"Error en login: {str(e)}")
+    usuario_repo = UsuarioRepository()
+    usuario = usuario_repo.get_by_email(db, login_data.correo)
+    if not usuario:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
-                "error_type": "server_error",
-                "message": "Error interno del servidor",
-                "detail": str(e)
+                "error_type": "not_found",
+                "message": "El correo electrónico no está registrado",
+                "detail": "No se encontró una cuenta con este correo electrónico"
             }
         )
+    if usuario.estado != "activo":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error_type": "inactive",
+                "message": "La cuenta no está activa",
+                "detail": "Esta cuenta ha sido desactivada. Contacte al administrador."
+            }
+        )
+    if not verify_password(login_data.contraseña, usuario.contraseña):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error_type": "invalid_password",
+                "message": "Contraseña incorrecta",
+                "detail": "La contraseña ingresada es incorrecta"
+            }
+        )
+    access_token = create_access_token(data={"sub": usuario.correo})
+    return LoginResponse(access_token=access_token, token_type="bearer")
 
 @router.get(
     "/",
@@ -197,13 +149,13 @@ async def listar_usuarios(
         # Transformar los usuarios a su formato de salida
         usuarios_response = []
         for usuario in usuarios:
-            rol = usuario_repo.get_rol_by_id(db, usuario.rol_id)
+            rol_obj = usuario_repo.get_rol_by_id(db, usuario.rol_id)
             usuarios_response.append(
                 UsuarioOutListado(
                     id_usuario=usuario.id_usuario,
                     nombre=usuario.nombre,
                     correo=usuario.correo,
-                    rol=rol.nombre_rol if rol else "Sin rol",
+                    rol=rol_obj.nombre_rol if rol_obj else "Sin rol",
                     estado=usuario.estado
                 )
             )
