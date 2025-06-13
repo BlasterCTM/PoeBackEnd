@@ -6,10 +6,10 @@ class ProductoBase(BaseModel):
     categoria: str = Field(..., min_length=1, max_length=50)
     unidad_tipo: str = Field(..., min_length=1, max_length=20)
     unidad_cantidad: int = Field(..., gt=0)
-    codigo_unico: Optional[str] = None
+    codigo_unico: str = Field(..., min_length=1, max_length=50)
     estado: Optional[str] = Field("activo", pattern="^(activo|inactivo)$")
 
-    @validator('nombre', 'categoria', 'unidad_tipo')
+    @validator('nombre', 'categoria', 'unidad_tipo', 'codigo_unico')
     def not_empty(cls, v):
         if not v or not v.strip():
             raise ValueError('El campo no puede estar vacío')
@@ -27,6 +27,7 @@ class ProductoOut(ProductoBase):
 class ProductoUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=1, max_length=100)
     categoria: Optional[str] = Field(None, min_length=1, max_length=50)
+    codigo_unico: Optional[str] = Field(None, min_length=1, max_length=50)
 
     @validator('nombre')
     def nombre_no_vacio(cls, v):
@@ -40,11 +41,18 @@ class ProductoUpdate(BaseModel):
             raise ValueError('La categoría no puede estar vacía')
         return v
 
+    @validator('codigo_unico')
+    def codigo_unico_no_vacio(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError('El código único no puede estar vacío')
+        return v
+
     class Config:
         from_attributes = True
         json_schema_extra = {
             "example": {
                 "nombre": "Leche descremada 1L",
-                "categoria": "Lácteos"
+                "categoria": "Lácteos",
+                "codigo_unico": "LECH-001"
             }
         }

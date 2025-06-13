@@ -31,7 +31,10 @@ def crear_producto(
         raise HTTPException(status_code=403, detail="No tienes permisos para crear productos")
     # Generar código único si no se proporciona
     codigo_unico = producto.codigo_unico or str(uuid.uuid4())[:8].upper()
-    db_producto = create_producto(db, producto, id_usuario=current_user.id_usuario, codigo_unico=codigo_unico)
+    try:
+        db_producto = create_producto(db, producto, id_usuario=current_user.id_usuario, codigo_unico=codigo_unico)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return db_producto
 
 
@@ -99,15 +102,19 @@ def actualizar_producto(
     db_producto = get_producto_by_id(db, id_producto)
     if not db_producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    # Solo se pueden editar nombre y categoria
     cambios = {}
     if producto_update.nombre is not None:
         cambios["nombre"] = producto_update.nombre
     if producto_update.categoria is not None:
         cambios["categoria"] = producto_update.categoria
+    if hasattr(producto_update, "codigo_unico") and producto_update.codigo_unico is not None:
+        cambios["codigo_unico"] = producto_update.codigo_unico
     if not cambios:
         raise HTTPException(status_code=422, detail="No se proporcionaron campos válidos para actualizar")
-    db_producto = update_producto(db, db_producto, **cambios)
+    try:
+        db_producto = update_producto(db, db_producto, **cambios)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return db_producto
 
 
