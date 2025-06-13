@@ -15,7 +15,7 @@ def get_token(credentials):
 
 def test_eliminar_producto_no_referenciado():
     token = get_token(ADMIN_CREDENTIALS)
-    # Crear producto de prueba (debería hacerse vía endpoint o fixture)
+    # Crear producto de prueba
     response = client.post(
         "/productos",
         json={"nombre": "TestProd", "categoria": "Test", "unidad_tipo": "u", "unidad_cantidad": 1},
@@ -24,13 +24,22 @@ def test_eliminar_producto_no_referenciado():
     assert response.status_code == 201
     prod_id = response.json()["id_producto"]
 
-    # Eliminar producto
+    # Eliminar producto (soft delete)
     response = client.delete(f"/productos/{prod_id}", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 204
+    assert response.status_code == 200
+    assert response.json()["detail"].startswith("Producto eliminado")
 
-    # Verificar que ya no existe
-    response = client.get(f"/productos/{prod_id}", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 404
+    # Verificar que ya no aparece en productos activos
+    response = client.get(f"/productos?estado=activo", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    productos = response.json()["productos"]
+    assert all(p["id_producto"] != prod_id for p in productos)
+
+    # Verificar que aparece como inactivo
+    response = client.get(f"/productos?estado=inactivo", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    productos = response.json()["productos"]
+    assert any(p["id_producto"] == prod_id and p["estado"] == "inactivo" for p in productos)
 
 def test_eliminar_producto_con_tarea_activa():
     token = get_token(ADMIN_CREDENTIALS)

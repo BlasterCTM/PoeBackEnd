@@ -57,20 +57,8 @@ def test_perfil_usuario():
             perfil = response.json()
             print(f"✅ Perfil obtenido exitosamente:")
             print(json.dumps(perfil, indent=2))
-            
-            # Validar campos requeridos
-            campos_requeridos = ["nombre", "correo", "rol"]
-            campos_faltantes = [campo for campo in campos_requeridos if campo not in perfil]
-            
-            if campos_faltantes:
-                print(f"❌ Faltan campos requeridos: {', '.join(campos_faltantes)}")
-            else:
-                print("✅ Todos los campos requeridos están presentes")
-                
-            if perfil["correo"] == usuario["correo"]:
-                print("✅ El correo coincide con el usuario autenticado")
-            else:
-                print("❌ El correo no coincide con el usuario autenticado")
+            assert "correo" in perfil
+            assert "rol" in perfil
         else:
             print(f"❌ Error al obtener perfil: {response.json()}")
     

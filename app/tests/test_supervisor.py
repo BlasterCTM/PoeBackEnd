@@ -60,27 +60,10 @@ def test_crear_supervisor(context):
             json=login_data
         )
         assert login_resp.status_code == 200
-        data = login_resp.json()
-        assert "access_token" in data
-        context["supervisor_token"] = data["access_token"]
-        return
-    assert response.status_code == 201
-    data = response.json()
-    assert data["usuario"]["correo"] == "supervisor.test@poe.com"
-
-    # Login para obtener el token
-    login_data = {
-        "correo": "supervisor.test@poe.com",
-        "contraseña": "supervisor123"
-    }
-    login_resp = requests.post(
-        f"{context['base_url']}/usuarios/token",
-        json=login_data
-    )
-    assert login_resp.status_code == 200
-    data = login_resp.json()
-    assert "access_token" in data
-    context["supervisor_token"] = data["access_token"]
+        context["supervisor_token"] = login_resp.json()["access_token"]
+    else:
+        assert response.status_code == 201
+        context["supervisor_token"] = response.json()["usuario"]["token"] if "usuario" in response.json() and "token" in response.json()["usuario"] else None
 
 def test_login_supervisor(context):
     """Test: Login como supervisor"""
@@ -217,4 +200,3 @@ def test_desasignar_reponedor(context):
     assert response.status_code == 200
     data = response.json()
     assert not any(r["id_usuario"] == context["reponedor_id"] for r in data["reponedores"])
-

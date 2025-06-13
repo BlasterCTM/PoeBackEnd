@@ -4,7 +4,7 @@ from app.schemas.producto import ProductoCreate, ProductoUpdate
 from typing import List
 from app.models.detalle_tarea import DetalleTarea
 from app.models.tarea import Tarea
-from sqlalchemy import or_
+from sqlalchemy import or_, asc, desc
 
 def create_producto(db: Session, producto: ProductoCreate, id_usuario: int, codigo_unico: str = None):
     db_producto = Producto(
@@ -20,8 +20,33 @@ def create_producto(db: Session, producto: ProductoCreate, id_usuario: int, codi
     db.refresh(db_producto)
     return db_producto
 
-def get_productos(db: Session) -> List[Producto]:
-    return db.query(Producto).all()
+def get_productos(
+    db: Session,
+    page: int = 1,
+    limit: int = 10,
+    orden: str = "nombre",
+    estado: str = None
+):
+    query = db.query(Producto)
+    if estado:
+        query = query.filter(Producto.estado == estado)
+    total = query.count()
+    # Ordenamiento seguro
+    if orden == "nombre":
+        query = query.order_by(asc(Producto.nombre))
+    elif orden == "fecha":
+        if hasattr(Producto, "created_at"):
+            query = query.order_by(desc(Producto.created_at))
+        else:
+            query = query.order_by(asc(Producto.nombre))
+    # Paginación
+    productos = query.offset((page - 1) * limit).limit(limit).all()
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "productos": productos
+    }
 
 def get_producto_by_id(db: Session, id_producto: int) -> Producto:
     return db.query(Producto).filter(Producto.id_producto == id_producto).first()

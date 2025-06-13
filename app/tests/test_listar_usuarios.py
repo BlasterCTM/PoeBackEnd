@@ -32,7 +32,7 @@ def test_listar_usuarios():
     # 2. Listar todos los usuarios (sin filtro)
     print("\n=== Listando todos los usuarios ===")
     response = requests.get(
-        f"{base_url}/usuarios",
+        f"{base_url}/usuarios?page=1&limit=5",
         headers=headers
     )
     
@@ -40,6 +40,8 @@ def test_listar_usuarios():
         data = response.json()
         print(f"✅ Total usuarios: {data['total']}")
         print("Usuarios encontrados:", json.dumps(data, indent=2))
+        assert "total" in data
+        assert "usuarios" in data
     else:
         print(f"❌ Error al listar usuarios: {response.json()}")
         return
@@ -47,7 +49,7 @@ def test_listar_usuarios():
     # 3. Listar usuarios filtrados por rol Supervisor
     print("\n=== Listando supervisores ===")
     response = requests.get(
-        f"{base_url}/usuarios?rol=Supervisor",
+        f"{base_url}/usuarios?rol=Supervisor&page=1&limit=5",
         headers=headers
     )
     
@@ -55,6 +57,8 @@ def test_listar_usuarios():
         data = response.json()
         print(f"✅ Total supervisores: {data['total']}")
         print("Supervisores encontrados:", json.dumps(data, indent=2))
+        assert "total" in data
+        assert "usuarios" in data
     else:
         print(f"❌ Error al listar supervisores: {response.json()}")
         return
@@ -62,7 +66,7 @@ def test_listar_usuarios():
     # 4. Listar usuarios filtrados por rol Reponedor
     print("\n=== Listando reponedores ===")
     response = requests.get(
-        f"{base_url}/usuarios?rol=Reponedor",
+        f"{base_url}/usuarios?rol=Reponedor&page=1&limit=5",
         headers=headers
     )
     
@@ -70,6 +74,8 @@ def test_listar_usuarios():
         data = response.json()
         print(f"✅ Total reponedores: {data['total']}")
         print("Reponedores encontrados:", json.dumps(data, indent=2))
+        assert "total" in data
+        assert "usuarios" in data
     else:
         print(f"❌ Error al listar reponedores: {response.json()}")
         return

@@ -10,3 +10,4 @@ class Producto(Base):
     unidad_cantidad = Column(Integer, nullable=False)
     codigo_unico = Column(String(50), nullable=True)
     id_usuario = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=False)
+    estado = Column(String(10), nullable=False, default="activo")

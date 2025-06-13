@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.schemas.producto import ProductoCreate, ProductoOut, ProductoUpdate
 from app.repositories.producto import (
@@ -34,9 +34,19 @@ def crear_producto(
     return db_producto
 
 
-@router.get("/productos", response_model=list[ProductoOut])
-def listar_productos(db: Session = Depends(get_db)):
-    return get_productos(db)
+@router.get("/productos")
+def listar_productos(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+    orden: str = Query("nombre", pattern="^(nombre|fecha)$"),
+    estado: str = Query(None, pattern="^(activo|inactivo)?$")
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado)
+    return data
 
 
 @router.get("/productos/{id_producto}", response_model=ProductoOut)
@@ -90,6 +100,6 @@ def eliminar_producto(
             status_code=409,
             detail="Este producto no puede ser eliminado porque está vinculado a tareas activas de reposición."
         )
-    db.delete(db_producto)
+    db_producto.estado = "inactivo"
     db.commit()
-    return {"detail": "Producto eliminado correctamente."}
+    return {"detail": "Producto eliminado correctamente (soft delete)."}

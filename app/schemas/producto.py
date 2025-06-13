@@ -7,6 +7,7 @@ class ProductoBase(BaseModel):
     unidad_tipo: str = Field(..., min_length=1, max_length=20)
     unidad_cantidad: int = Field(..., gt=0)
     codigo_unico: Optional[str] = None
+    estado: Optional[str] = Field("activo", pattern="^(activo|inactivo)$")
 
     @validator('nombre', 'categoria', 'unidad_tipo')
     def not_empty(cls, v):
