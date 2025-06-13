@@ -4,7 +4,7 @@ from app.schemas.producto import ProductoCreate, ProductoUpdate
 from typing import List
 from app.models.detalle_tarea import DetalleTarea
 from app.models.tarea import Tarea
-from sqlalchemy import or_, asc, desc
+from sqlalchemy import or_, asc, desc, func
 
 def create_producto(db: Session, producto: ProductoCreate, id_usuario: int, codigo_unico: str = None):
     db_producto = Producto(
@@ -68,3 +68,16 @@ def producto_vinculado_a_tareas_activas(db: Session, id_producto: int, estados_a
         )
     )
     return db.query(query.exists()).scalar()
+
+def buscar_productos(
+    db: Session,
+    nombre: str = None,
+    categoria: str = None
+):
+    query = db.query(Producto).filter(Producto.estado == "activo")
+    if nombre:
+        query = query.filter(func.lower(Producto.nombre).ilike(f"%{nombre.lower()}%"))
+    if categoria:
+        query = query.filter(func.lower(Producto.categoria) == categoria.lower())
+    resultados = query.order_by(asc(Producto.nombre)).all()
+    return resultados

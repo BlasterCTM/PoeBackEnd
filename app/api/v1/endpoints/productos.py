@@ -7,6 +7,7 @@ from app.repositories.producto import (
     update_producto,
     get_producto_by_id,
     producto_vinculado_a_tareas_activas,
+    buscar_productos,  # <-- importar la nueva función
 )
 from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
@@ -47,6 +48,32 @@ def listar_productos(
         raise HTTPException(status_code=401, detail="No autenticado")
     data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado)
     return data
+
+
+@router.get("/productos/buscar")
+def buscar_productos_endpoint(
+    nombre: str = Query(None, description="Nombre parcial o completo del producto"),
+    categoria: str = Query(None, description="Categoría exacta del producto"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if not current_user or current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden buscar productos.")
+    resultados = buscar_productos(db, nombre=nombre, categoria=categoria)
+    if not resultados:
+        return {"total": 0, "mensaje": "Sin resultados para los filtros aplicados."}
+    return {
+        "total": len(resultados),
+        "resultados": [
+            {
+                "id": p.id_producto,
+                "nombre": p.nombre,
+                "categoria": p.categoria,
+                "unidad_tipo": p.unidad_tipo,
+                "unidad_cantidad": p.unidad_cantidad
+            } for p in resultados
+        ]
+    }
 
 
 @router.get("/productos/{id_producto}", response_model=ProductoOut)
@@ -103,3 +130,7 @@ def eliminar_producto(
     db_producto.estado = "inactivo"
     db.commit()
     return {"detail": "Producto eliminado correctamente (soft delete)."}
+
+
+from fastapi import Security
+from fastapi.security import OAuth2PasswordBearer
