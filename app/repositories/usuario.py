@@ -62,7 +62,8 @@ class UsuarioRepository(BaseRepository[Usuario]):
         usuario: Usuario,
         nombre: Optional[str] = None,
         correo: Optional[str] = None,
-        rol_id: Optional[int] = None
+        rol_id: Optional[int] = None,
+        estado: Optional[str] = None
     ) -> Usuario:
         # Actualizar solo los campos proporcionados
         if nombre is not None:
@@ -75,7 +76,8 @@ class UsuarioRepository(BaseRepository[Usuario]):
             usuario.correo = correo
         if rol_id is not None:
             usuario.rol_id = rol_id
-
+        if estado is not None:
+            usuario.estado = estado
         db.add(usuario)
         db.commit()
         db.refresh(usuario)

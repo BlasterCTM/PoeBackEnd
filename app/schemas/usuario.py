@@ -81,6 +81,7 @@ class UsuarioUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=2, max_length=100)
     correo: Optional[EmailStr] = None
     rol: Optional[RolEnum] = None
+    estado: Optional[str] = Field(None, pattern="^(activo|inactivo)$", description="Estado del usuario: activo o inactivo")
 
     @validator('rol')
     def validar_rol_update(cls, v):
@@ -93,7 +94,8 @@ class UsuarioUpdate(BaseModel):
             "example": {
                 "nombre": "Juan Pérez",
                 "correo": "juan.perez@ejemplo.com",
-                "rol": "Supervisor"
+                "rol": "Supervisor",
+                "estado": "activo"
             }
         }
 
