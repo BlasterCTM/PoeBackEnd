@@ -2,6 +2,9 @@ from sqlalchemy.orm import Session
 from app.models.producto import Producto
 from app.schemas.producto import ProductoCreate, ProductoUpdate
 from typing import List
+from app.models.detalle_tarea import DetalleTarea
+from app.models.tarea import Tarea
+from sqlalchemy import or_
 
 def create_producto(db: Session, producto: ProductoCreate, id_usuario: int, codigo_unico: str = None):
     db_producto = Producto(
@@ -29,3 +32,14 @@ def update_producto(db: Session, db_producto: Producto, **cambios) -> Producto:
     db.commit()
     db.refresh(db_producto)
     return db_producto
+
+def producto_vinculado_a_tareas_activas(db: Session, id_producto: int, estados_activos: list) -> bool:
+    query = (
+        db.query(DetalleTarea)
+        .join(Tarea, DetalleTarea.id_tarea == Tarea.id_tarea)
+        .filter(
+            DetalleTarea.id_producto == id_producto,
+            Tarea.estado_id.in_(estados_activos)
+        )
+    )
+    return db.query(query.exists()).scalar()

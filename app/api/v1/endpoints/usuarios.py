@@ -197,11 +197,53 @@ async def listar_usuarios(
             detail="Error interno al listar usuarios"
         )
 
+@router.delete(
+    "/{usuario_id}",
+    status_code=status.HTTP_200_OK,
+    description="Eliminar un usuario (requiere ser administrador)"
+)
+async def eliminar_usuario(
+    usuario_id: int,
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_admin_user)
+):
+    try:
+        # Obtener el usuario a eliminar
+        usuario_repo = UsuarioRepository()
+        usuario = usuario_repo.get_usuario_by_id(db, usuario_id)
+        
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No se encontró el usuario con ID: {usuario_id}"
+            )
+        
+        # No permitir eliminar al usuario administrador principal
+        if usuario.correo == "admin@admin.com":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No se puede eliminar al administrador principal"
+            )
+        
+        # Eliminar el usuario
+        usuario_repo.delete_usuario(db, usuario)
+        
+        return {"mensaje": "Usuario eliminado exitosamente"}
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error al eliminar usuario: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al eliminar usuario"
+        )
+
 @router.put(
     "/{usuario_id}",
     response_model=UsuarioResponse,
     status_code=status.HTTP_200_OK,
-    description="Actualizar datos de un usuario (requiere ser administrador)"
+    description="Actualizar un usuario (requiere ser administrador)"
 )
 async def actualizar_usuario(
     usuario_id: int,
@@ -219,7 +261,14 @@ async def actualizar_usuario(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No se encontró el usuario con ID: {usuario_id}"
             )
-
+        
+        # No permitir cambiar el rol del administrador principal
+        if usuario.correo == "admin@admin.com" and usuario_update.rol:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No se puede cambiar el rol del administrador principal"
+            )
+        
         # Preparar los datos para la actualización
         update_data = {}
         
@@ -227,37 +276,36 @@ async def actualizar_usuario(
             update_data["nombre"] = usuario_update.nombre
             
         if usuario_update.correo is not None:
+            # Verificar si el correo existe en otro usuario
+            existing_user = usuario_repo.get_by_email(db, usuario_update.correo)
+            if existing_user and existing_user.id_usuario != usuario.id_usuario:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="El correo electrónico ya está registrado para otro usuario"
+                )
             update_data["correo"] = usuario_update.correo
             
         if usuario_update.rol is not None:
             # Obtener el ID del nuevo rol
-            nuevo_rol = usuario_repo.get_rol_by_nombre(db, usuario_update.rol.value)
+            nuevo_rol = usuario_repo.get_rol_by_nombre(db, usuario_update.rol)
             if not nuevo_rol:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"El rol {usuario_update.rol.value} no existe"
+                    detail=f"El rol {usuario_update.rol} no existe"
                 )
             update_data["rol_id"] = nuevo_rol.id_rol
+            
+        if usuario_update.estado is not None:
+            update_data["estado"] = usuario_update.estado
 
-        try:
-            # Actualizar el usuario
-            usuario_actualizado = usuario_repo.update_usuario(
-                db=db,
-                usuario=usuario,
-                **update_data
-            )
-            
-            return UsuarioResponse(
-                mensaje="Usuario actualizado exitosamente",
-                usuario=usuario_actualizado
-            )
-            
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=str(e)
-            )
-            
+        # Actualizar el usuario
+        usuario_actualizado = usuario_repo.update_usuario(db, usuario, **update_data)
+        
+        return UsuarioResponse(
+            mensaje="Usuario actualizado exitosamente",
+            usuario=usuario_actualizado
+        )
+        
     except HTTPException as e:
         raise e
     except Exception as e:
