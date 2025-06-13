@@ -113,7 +113,29 @@ async def login_for_access_token(
             }
         )
     access_token = create_access_token(data={"sub": usuario.correo})
-    return LoginResponse(access_token=access_token, token_type="bearer")
+    
+    # Obtener el rol del usuario
+    rol = usuario_repo.get_rol_by_id(db, usuario.rol_id)
+    if not rol:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al obtener el rol del usuario"
+        )
+    
+    # Crear objeto UserInfo con la información del usuario
+    user_info = {
+        "id": str(usuario.id_usuario),
+        "nombre": usuario.nombre,
+        "correo": usuario.correo,
+        "rol": rol.nombre_rol,
+        "estado": usuario.estado
+    }
+    
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user_info=user_info
+    )
 
 @router.get(
     "/",

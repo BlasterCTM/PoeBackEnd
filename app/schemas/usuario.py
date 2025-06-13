@@ -45,9 +45,17 @@ class ReponedorCreate(BaseModel):
     contraseña: str = Field(..., min_length=6)
     estado: str = Field(default="activo", pattern="^(activo|inactivo)$")
 
+class UserInfo(BaseModel):
+    id: str
+    nombre: str
+    correo: str
+    rol: str
+    estado: str
+
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str
+    user_info: UserInfo
 
 class AuthError(BaseModel):
     detail: str
