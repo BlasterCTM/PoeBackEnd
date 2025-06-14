@@ -1,12 +1,14 @@
-# Endpoints para detalle de tarea
+# Endpoints para tareas y detalle de tarea
 
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, status
 from sqlalchemy.orm import Session
 from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
-from app.models.usuario import Usuario
+from app.models.usuario import Usuario, RolEnum
 from app.repositories.detalle_tarea import agregar_producto_a_detalle, eliminar_producto_de_detalle, listar_detalle_tarea
+from app.repositories.tarea import tarea_repository
 from app.models.producto import Producto
+from app.schemas.tarea import TareaCreate, TareaResponse
 
 router = APIRouter()
 
@@ -69,3 +71,43 @@ def obtener_detalle_tarea(
             "cantidad": d.cantidad
         } for d in detalles
     ]
+
+@router.post("/tareas", response_model=TareaResponse, status_code=status.HTTP_201_CREATED)
+def crear_tarea(
+    tarea_data: TareaCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Crea una nueva tarea"""
+    # Verificar permisos
+    if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo administradores o supervisores pueden crear tareas."
+        )
+    
+    try:
+        # Determinar el ID del supervisor
+        if current_user.rol.nombre_rol.lower() == "supervisor":
+            # Si es supervisor, usa su propio ID
+            id_supervisor = current_user.id_usuario
+        else:
+            # Si es administrador, debe proporcionar un ID de supervisor
+            if not tarea_data.id_supervisor:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Los administradores deben proporcionar un ID de supervisor al crear una tarea."
+                )
+            id_supervisor = tarea_data.id_supervisor
+        
+        # Crear la tarea
+        tarea = tarea_repository.crear_tarea(
+            db=db,
+            id_supervisor=id_supervisor,
+            id_punto=tarea_data.id_punto,
+            id_reponedor=tarea_data.id_reponedor,
+            current_user=current_user
+        )
+        return tarea
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

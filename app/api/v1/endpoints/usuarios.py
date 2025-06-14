@@ -24,12 +24,12 @@ router = APIRouter(
     "/",
     response_model=UsuarioResponse,
     status_code=status.HTTP_201_CREATED,
-    description="Crear un nuevo usuario (requiere ser administrador)"
+    description="Crear un nuevo usuario (requiere ser administrador o supervisor)"
 )
 async def crear_usuario(
     usuario: UsuarioCreate,
     db: Annotated[Session, Depends(get_database)],
-    _: Annotated[dict, Depends(get_current_admin_user)]
+    current_user: Annotated[Usuario, Depends(get_current_user)]
 ):
     # Inicializar el repositorio
     usuario_repo = UsuarioRepository()
@@ -42,6 +42,29 @@ async def crear_usuario(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="El correo electrónico ya está registrado"
+            )
+
+        # Obtener el rol del usuario actual
+        rol_actual = usuario_repo.get_rol_by_id(db, current_user.rol_id)
+        if not rol_actual:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al obtener el rol del usuario actual"
+            )
+
+        # Verificar permisos según el rol
+        if rol_actual.nombre_rol == RolEnum.SUPERVISOR.value:
+            # Los supervisores solo pueden crear reponedores
+            if usuario.rol.value != RolEnum.REPONEDOR.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Los supervisores solo pueden crear usuarios con rol de Reponedor"
+                )
+        elif rol_actual.nombre_rol != RolEnum.ADMINISTRADOR.value:
+            # Si no es admin ni supervisor, no puede crear usuarios
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permisos para crear usuarios"
             )
         
         # Obtener el ID del rol correspondiente
@@ -141,15 +164,36 @@ async def login_for_access_token(
     "/",
     response_model=ListaUsuariosResponse,
     status_code=status.HTTP_200_OK,
-    description="Listar todos los usuarios (requiere ser administrador)"
+    description="Listar usuarios (administradores pueden ver todos, supervisores solo ven reponedores)"
 )
 async def listar_usuarios(
     nombre: Optional[str] = None,
     rol: Optional[str] = None,
     db: Session = Depends(get_database),
-    current_user: Usuario = Depends(get_current_admin_user)
+    current_user: Usuario = Depends(get_current_user)
 ):
     try:
+        # Inicializar repositorio
+        usuario_repo = UsuarioRepository()
+
+        # Obtener el rol del usuario actual
+        rol_actual = usuario_repo.get_rol_by_id(db, current_user.rol_id)
+        if not rol_actual:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al obtener el rol del usuario actual"
+            )
+
+        # Si es supervisor, solo puede ver reponedores
+        if rol_actual.nombre_rol == RolEnum.SUPERVISOR.value:
+            rol = RolEnum.REPONEDOR.value
+        # Si no es admin ni supervisor, no puede ver usuarios
+        elif rol_actual.nombre_rol != RolEnum.ADMINISTRADOR.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permisos para ver usuarios"
+            )
+        
         # Verificar que el rol sea válido si se proporciona
         if rol and rol not in [r.value for r in RolEnum]:
             raise HTTPException(
@@ -158,7 +202,6 @@ async def listar_usuarios(
             )
         
         # Obtener usuarios
-        usuario_repo = UsuarioRepository()
         usuarios = usuario_repo.listar_usuarios(db, nombre, rol)
         
         if not usuarios:
