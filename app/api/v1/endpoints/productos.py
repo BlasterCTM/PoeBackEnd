@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from app.schemas.producto import ProductoCreate, ProductoOut, ProductoUpdate
 from app.repositories.producto import (
@@ -17,7 +17,12 @@ import uuid
 from app.repositories.punto_reposicion import (
     obtener_punto_por_producto,
     desasignar_punto_por_producto,
+    asignar_o_reasignar_producto_a_punto, obtener_ubicacion_producto
 )
+from app.models.punto_reposicion import PuntoReposicion
+from app.models.objeto_mapa import ObjetoMapa
+from app.models.mueble_reposicion import MuebleReposicion
+from app.models.ubicacion_fisica import UbicacionFisica
 from app.schemas.mapa import PuntoReposicionOut, ProductoAsociado
 
 router = APIRouter()
@@ -182,6 +187,68 @@ def desasignar_punto_de_producto(
             "nivel": punto.nivel,
             "estanteria": punto.estanteria,
             "producto": None
+        }
+    }
+
+
+@router.put("/productos/{id_producto}/asignar-punto")
+def asignar_punto_a_producto(
+    id_producto: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden asociar productos a puntos.")
+    id_punto = body.get("id_punto")
+    if not id_punto:
+        raise HTTPException(status_code=422, detail="El campo id_punto es obligatorio.")
+    producto = get_producto_by_id(db, id_producto)
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    try:
+        punto = asignar_o_reasignar_producto_a_punto(db, id_producto, id_punto)
+    except Exception as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    # Obtener info de ubicación
+    mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == punto.id_mueble).first()
+    objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first() if mueble else None
+    ubicacion = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).first() if objeto else None
+    return {
+        "mensaje": f"Producto '{producto.nombre}' asociado correctamente al punto {id_punto}.",
+        "ubicacion": {
+            "pasillo": objeto.nombre if objeto else None,
+            "estanteria": punto.estanteria,
+            "nivel": punto.nivel
+        }
+    }
+
+
+@router.get("/productos/{id_producto}/ubicacion")
+def obtener_ubicacion_de_producto(
+    id_producto: int,
+    db: Session = Depends(get_db)
+):
+    producto = get_producto_by_id(db, id_producto)
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    punto = obtener_ubicacion_producto(db, id_producto)
+    if not punto:
+        return {
+            "producto": producto.nombre,
+            "asignado": False,
+            "mensaje": "Este producto aún no tiene una ubicación asignada."
+        }
+    mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == punto.id_mueble).first()
+    objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first() if mueble else None
+    return {
+        "producto": producto.nombre,
+        "asignado": True,
+        "ubicacion": {
+            "id_punto": punto.id_punto,
+            "pasillo": objeto.nombre if objeto else None,
+            "estanteria": punto.estanteria,
+            "nivel": punto.nivel
         }
     }
 
