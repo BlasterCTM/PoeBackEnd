@@ -62,8 +62,12 @@ async def registrar_reponedor(
             rol_id=rol_reponedor.id_rol
         )
         
+        # Asignar automáticamente el reponedor al supervisor actual
+        supervision_repo = SupervisionRepository()
+        supervision_repo.asignar_reponedor(db, supervisor_id=current_user.id_usuario, reponedor_id=nuevo_reponedor.id_usuario)
+        
         return UsuarioResponse(
-            mensaje="Reponedor registrado exitosamente",
+            mensaje="Reponedor registrado y asignado exitosamente",
             usuario=nuevo_reponedor
         )
         
