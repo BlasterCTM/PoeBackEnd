@@ -7,7 +7,7 @@ from sqlalchemy import text
 from app.core.config.settings import settings
 from app.core.database.database import init_db
 from app.api.dependencies.database import get_database
-from app.api.v1.endpoints import usuarios, supervisor, productos
+from app.api.v1.endpoints import usuarios, supervisor, productos, mapa
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.security.auth import get_current_user as get_current_user_core
@@ -43,6 +43,7 @@ app.add_middleware(
 app.include_router(usuarios.router)
 app.include_router(supervisor.router)
 app.include_router(productos.router)
+app.include_router(mapa.router)
 
 # Inicializar la base de datos al arrancar la aplicación
 @app.on_event("startup")
