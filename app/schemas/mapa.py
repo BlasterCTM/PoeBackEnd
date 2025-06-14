@@ -8,6 +8,8 @@ class ProductoAsociado(BaseModel):
     unidad_cantidad: int
 
 class PuntoReposicionOut(BaseModel):
+    id_punto: int
+    id_mueble: int
     nivel: int
     estanteria: int
     producto: Optional[ProductoAsociado]

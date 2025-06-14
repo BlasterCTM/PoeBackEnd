@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
@@ -14,6 +14,9 @@ from app.schemas.mapa import MapeoReposicionResponse, MapaOut, UbicacionOut, Obj
 from app.schemas.mapa_vista import (
     MapaVistaGraficaResponse, MapaVistaOut, ObjetoUbicacionOut, ObjetoMapaVistaOut, ObjetoTipoOut, MuebleVistaOut, PuntoReposicionVistaOut
 )
+from app.schemas.usuario_punto import AsignarPuntoRequest
+from app.models.usuario_punto import UsuarioPunto
+from app.repositories.punto_reposicion import asignar_producto_a_punto, desasignar_producto_de_punto
 
 router = APIRouter()
 
@@ -146,3 +149,201 @@ def vista_grafica_mapa(
         "mapa": MapaVistaOut(id=mapa.id_mapa, nombre=mapa.nombre, ancho=mapa.ancho, alto=mapa.alto),
         "objetos": objetos
     }
+
+@router.get("/mapa/supervisor")
+def vista_puntos_supervisor(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol.lower() != "supervisor":
+        raise HTTPException(status_code=403, detail="Solo los supervisores pueden acceder a este recurso.")
+
+    from app.models.usuario_punto import UsuarioPunto
+    from app.models.supervision import Supervision
+    from app.models.mueble_reposicion import MuebleReposicion
+    from app.models.punto_reposicion import PuntoReposicion
+    from app.models.objeto_mapa import ObjetoMapa
+    from app.models.ubicacion_fisica import UbicacionFisica
+    from app.models.objeto_tipo import ObjetoTipo
+    from app.models.mapa import Mapa
+    from app.models.producto import Producto
+
+    # Obtener puntos asignados por usuario_punto
+    puntos_usuario = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario == current_user.id_usuario).all()
+    puntos_usuario_ids = [p[0] for p in puntos_usuario]
+
+    # Obtener reponedores supervisados por este supervisor
+    reponedores = db.query(Supervision.reponedor_id).filter(Supervision.supervisor_id == current_user.id_usuario).all()
+    reponedor_ids = [r[0] for r in reponedores]
+
+    # Obtener puntos asignados a los reponedores supervisados
+    puntos_reponedores = []
+    if reponedor_ids:
+        puntos_reponedores = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario.in_(reponedor_ids)).all()
+    puntos_reponedores_ids = [p[0] for p in puntos_reponedores]
+
+    # Unir todos los puntos asignados
+    puntos_ids_asignados = set(puntos_usuario_ids + puntos_reponedores_ids)
+
+    # Obtener todos los puntos del mapa del supervisor
+    # Primero, obtener el mapa asociado a los puntos asignados (si no hay, devolver mensaje)
+    primer_punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto.in_(list(puntos_ids_asignados))).first()
+    if not primer_punto:
+        return {"mensaje": "No tienes puntos de reposición asignados actualmente."}
+    mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == primer_punto.id_mueble).first()
+    if not mueble:
+        return {"mensaje": "No se encontró el mueble asociado a tus puntos."}
+    objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first()
+    if not objeto:
+        return {"mensaje": "No se encontró el objeto asociado al mueble."}
+    ubicacion = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).first()
+    if not ubicacion:
+        return {"mensaje": "No se encontró la ubicación asociada al objeto."}
+    mapa = db.query(Mapa).filter(Mapa.id_mapa == ubicacion.id_mapa).first()
+    if not mapa:
+        return {"mensaje": "No se encontró el mapa asociado a tus puntos."}
+
+    # Obtener todos los puntos del mapa
+    muebles = db.query(MuebleReposicion).all()
+    puntos_todos = db.query(PuntoReposicion).all()
+    ubicaciones = db.query(UbicacionFisica).filter(UbicacionFisica.id_mapa == mapa.id_mapa).all()
+    objetos = {o.id_objeto: o for o in db.query(ObjetoMapa).all()}
+
+    respuesta = {
+        "mapa": {
+            "id": mapa.id_mapa,
+            "nombre": mapa.nombre,
+            "ancho": mapa.ancho,
+            "alto": mapa.alto
+        },
+        "puntos": []
+    }
+
+    for punto in puntos_todos:
+        # Buscar la ubicación y objeto relacionados
+        mueble = next((m for m in muebles if m.id_mueble == punto.id_mueble), None)
+        if not mueble:
+            continue
+        objeto = objetos.get(mueble.id_objeto)
+        if not objeto:
+            continue
+        ubicacion = next((u for u in ubicaciones if u.id_objeto == objeto.id_objeto), None)
+        if not ubicacion:
+            continue
+        producto = db.query(Producto).filter(Producto.id_producto == punto.id_producto).first() if punto.id_producto else None
+        respuesta["puntos"].append({
+            "x": ubicacion.x,
+            "y": ubicacion.y,
+            "punto_id": punto.id_punto,
+            "pasillo": objeto.nombre,
+            "estanteria": punto.estanteria,
+            "nivel": punto.nivel,
+            "detalle": producto.nombre if producto else None,
+            "resaltado": punto.id_punto in puntos_ids_asignados
+        })
+
+    return respuesta
+
+@router.post("/puntos/asignar")
+def asignar_punto_usuario(
+    datos: AsignarPuntoRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Solo administradores o supervisores pueden asignar puntos
+    if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para asignar puntos.")
+    # Verificar existencia de usuario y punto
+    usuario = db.query(Usuario).filter(Usuario.id_usuario == datos.id_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    # Solo reponedores pueden ser asignados a puntos
+    if usuario.rol.nombre_rol.lower() != "reponedor":
+        raise HTTPException(status_code=409, detail="Solo los usuarios con rol 'Reponedor' pueden ser asignados a puntos de reposición.")
+    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == datos.id_punto).first()
+    if not punto:
+        raise HTTPException(status_code=404, detail="Punto de reposición no encontrado.")
+    # Verificar si ya está asignado
+    existe = db.query(UsuarioPunto).filter_by(id_usuario=datos.id_usuario, id_punto=datos.id_punto).first()
+    if existe:
+        raise HTTPException(status_code=409, detail="El punto ya está asignado a este usuario.")
+    # Asignar
+    asignacion = UsuarioPunto(id_usuario=datos.id_usuario, id_punto=datos.id_punto)
+    db.add(asignacion)
+    db.commit()
+    return {"mensaje": "Punto asignado correctamente al reponedor."}
+
+@router.delete("/puntos/desasignar")
+def desasignar_punto_usuario(
+    datos: AsignarPuntoRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Solo administradores o supervisores pueden desasignar puntos
+    if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para desasignar puntos.")
+    usuario = db.query(Usuario).filter(Usuario.id_usuario == datos.id_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    if usuario.rol.nombre_rol.lower() != "reponedor":
+        raise HTTPException(status_code=409, detail="Solo los usuarios con rol 'Reponedor' pueden ser desasignados de puntos de reposición.")
+    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == datos.id_punto).first()
+    if not punto:
+        raise HTTPException(status_code=404, detail="Punto de reposición no encontrado.")
+    asignacion = db.query(UsuarioPunto).filter_by(id_usuario=datos.id_usuario, id_punto=datos.id_punto).first()
+    if not asignacion:
+        raise HTTPException(status_code=404, detail="El punto no está asignado a este usuario.")
+    db.delete(asignacion)
+    db.commit()
+    return {"mensaje": "Punto desasignado correctamente del reponedor."}
+
+@router.put("/puntos/{id_punto}/asignar-producto", response_model=PuntoReposicionOut)
+def asociar_producto_a_punto(
+    id_punto: int,
+    id_producto: int = Body(..., embed=True, description="ID del producto a asociar"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden asociar productos a puntos.")
+    try:
+        punto = asignar_producto_a_punto(db, id_punto, id_producto)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    # Construir respuesta con producto asociado
+    producto = db.query(Producto).filter(Producto.id_producto == punto.id_producto).first() if punto.id_producto else None
+    producto_out = None
+    if producto:
+        producto_out = ProductoAsociado(
+            nombre=producto.nombre,
+            categoria=producto.categoria,
+            unidad_tipo=producto.unidad_tipo,
+            unidad_cantidad=producto.unidad_cantidad
+        )
+    return PuntoReposicionOut(
+        id_punto=punto.id_punto,
+        id_mueble=punto.id_mueble,
+        nivel=punto.nivel,
+        estanteria=punto.estanteria,
+        producto=producto_out
+    )
+
+@router.delete("/puntos/{id_punto}/desasignar-producto", response_model=PuntoReposicionOut)
+def desasignar_producto_punto(
+    id_punto: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden desasignar productos de puntos.")
+    try:
+        punto = desasignar_producto_de_punto(db, id_punto)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return PuntoReposicionOut(
+        id_punto=punto.id_punto,
+        id_mueble=punto.id_mueble,
+        nivel=punto.nivel,
+        estanteria=punto.estanteria,
+        producto=None
+    )

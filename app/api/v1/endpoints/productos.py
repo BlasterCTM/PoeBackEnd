@@ -14,6 +14,11 @@ from app.api.dependencies.auth import get_current_user
 from app.models.usuario import Usuario, RolEnum
 from fastapi import Response
 import uuid
+from app.repositories.punto_reposicion import (
+    obtener_punto_por_producto,
+    desasignar_punto_por_producto,
+)
+from app.schemas.mapa import PuntoReposicionOut, ProductoAsociado
 
 router = APIRouter()
 
@@ -79,15 +84,33 @@ def buscar_productos_endpoint(
     }
 
 
-@router.get("/productos/{id_producto}", response_model=ProductoOut)
-def obtener_producto(
+@router.get("/productos/{id_producto}")
+def obtener_producto_con_ubicacion(
     id_producto: int,
     db: Session = Depends(get_db)
 ):
     db_producto = get_producto_by_id(db, id_producto)
     if not db_producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    return db_producto
+    punto = obtener_punto_por_producto(db, id_producto)
+    punto_out = None
+    if punto:
+        punto_out = PuntoReposicionOut(
+            id_punto=punto.id_punto,
+            id_mueble=punto.id_mueble,
+            nivel=punto.nivel,
+            estanteria=punto.estanteria,
+            producto=ProductoAsociado(
+                nombre=db_producto.nombre,
+                categoria=db_producto.categoria,
+                unidad_tipo=db_producto.unidad_tipo,
+                unidad_cantidad=db_producto.unidad_cantidad
+            )
+        )
+    return {
+        "producto": db_producto,
+        "ubicacion": punto_out
+    }
 
 
 @router.put("/productos/{id_producto}", response_model=ProductoOut)
@@ -137,6 +160,30 @@ def eliminar_producto(
     db_producto.estado = "inactivo"
     db.commit()
     return {"detail": "Producto eliminado correctamente (soft delete)."}
+
+
+@router.delete("/productos/{id_producto}/desasignar-punto")
+def desasignar_punto_de_producto(
+    id_producto: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden desasignar productos de puntos.")
+    try:
+        punto = desasignar_punto_por_producto(db, id_producto)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {
+        "mensaje": "Producto desasignado del punto correctamente",
+        "punto": {
+            "id_punto": punto.id_punto,
+            "id_mueble": punto.id_mueble,
+            "nivel": punto.nivel,
+            "estanteria": punto.estanteria,
+            "producto": None
+        }
+    }
 
 
 from fastapi import Security
