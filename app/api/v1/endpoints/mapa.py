@@ -63,6 +63,8 @@ def visualizar_mapa_reposicion(
                             unidad_cantidad=producto.unidad_cantidad
                         )
                     puntos_out.append(PuntoReposicionOut(
+                        id_punto=punto.id_punto,
+                        id_mueble=punto.id_mueble,
                         nivel=punto.nivel,
                         estanteria=punto.estanteria,
                         producto=producto_out
