@@ -485,3 +485,33 @@ def actualizar_cantidad_producto_detalle(
         "producto": producto.nombre if producto else None,
         "nueva_cantidad": cantidad
     }
+
+@router.put("/tareas/{id_tarea}/cancelar")
+def cancelar_tarea(
+    id_tarea: int,
+    body: dict = Body(None),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+    # Solo supervisor creador o admin
+    if current_user.rol.nombre_rol.lower() == "supervisor" and tarea.id_supervisor != current_user.id_usuario:
+        raise HTTPException(status_code=403, detail="No tienes permisos para cancelar esta tarea.")
+    elif current_user.rol.nombre_rol.lower() not in ["supervisor", "administrador"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para cancelar tareas.")
+    # Solo si está pendiente o en progreso
+    estado = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first()
+    if estado.nombre_estado not in ["pendiente", "en progreso"]:
+        raise HTTPException(status_code=409, detail="No se puede cancelar esta tarea porque ya está completada o fue cancelada anteriormente.")
+    estado_cancelada = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == "cancelada").first()
+    if not estado_cancelada:
+        raise HTTPException(status_code=500, detail="No se encontró el estado 'cancelada' en la base de datos.")
+    tarea.estado_id = estado_cancelada.estado_id
+    db.commit()
+    return {
+        "mensaje": "Tarea cancelada correctamente.",
+        "estado": "cancelada",
+        "id_tarea": tarea.id_tarea
+    }
