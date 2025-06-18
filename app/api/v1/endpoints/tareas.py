@@ -1,7 +1,7 @@
 # Endpoints para tareas y detalle de tarea
 
-from fastapi import APIRouter, Depends, HTTPException, Body, status, Path
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Body, status, Path, Query
+from sqlalchemy.orm import Session, joinedload
 from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
 from app.models.usuario import Usuario, RolEnum
@@ -327,3 +327,82 @@ def listar_tareas_no_asignadas(db: Session = Depends(get_db)):
     # Buscar tareas sin reponedor asignado (id_reponedor es nulo)
     tareas = db.query(Tarea).filter(Tarea.id_reponedor.is_(None)).all()
     return tareas
+
+@router.get("/tareas/supervisor")
+def listar_tareas_supervisor(
+    estado: str = Query(None, description="Filtrar por estado de tarea (opcional)"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol != RolEnum.SUPERVISOR.value:
+        raise HTTPException(status_code=403, detail="Solo los supervisores pueden acceder a este recurso.")
+    query = db.query(Tarea).options(
+        joinedload(Tarea.detalles)
+    ).filter(Tarea.id_supervisor == current_user.id_usuario)
+    if estado:
+        estado_obj = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == estado).first()
+        if not estado_obj:
+            raise HTTPException(status_code=422, detail="Estado no válido.")
+        query = query.filter(Tarea.estado_id == estado_obj.estado_id)
+    tareas = query.all()
+    # Diccionario de colores por estado
+    colores_estado = {
+        "pendiente": "#f1c40f",
+        "en progreso": "#3498db",
+        "completada": "#2ecc71",
+        "cancelada": "#e74c3c",
+        "sin asignar": "#95a5a6"
+    }
+    resultado = []
+    for tarea in tareas:
+        estado_nombre = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first().nombre_estado
+        reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea.id_punto).first()
+        # Generar nombre de la tarea
+        nombre_tarea = f"Reposición estantería {punto.estanteria if punto else '-'} nivel {punto.nivel if punto else '-'}"
+        resultado.append({
+            "id_tarea": tarea.id_tarea,
+            "nombre": nombre_tarea,
+            "estado": estado_nombre,
+            "color_estado": colores_estado.get(estado_nombre, "#bdc3c7"),
+            "reponedor": reponedor.nombre if reponedor else None,
+            "punto_reposicion": {
+                "estanteria": punto.estanteria if punto else None,
+                "nivel": punto.nivel if punto else None
+            },
+            "fecha_creacion": str(tarea.fecha_creacion)
+        })
+    return resultado
+
+@router.get("/tareas/{id_tarea}")
+def detalle_tarea(
+    id_tarea: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+    # Seguridad: solo el supervisor creador o admin puede ver
+    if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value and tarea.id_supervisor != current_user.id_usuario:
+        raise HTTPException(status_code=403, detail="No tienes acceso a esta tarea.")
+    # Respuesta enriquecida
+    estado_nombre = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first().nombre_estado
+    reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
+    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea.id_punto).first()
+    return {
+        "id_tarea": tarea.id_tarea,
+        "estado": estado_nombre,
+        "reponedor": reponedor.nombre if reponedor else None,
+        "punto_reposicion": {
+            "estanteria": punto.estanteria if punto else None,
+            "nivel": punto.nivel if punto else None
+        },
+        "fecha_creacion": str(tarea.fecha_creacion),
+        "detalles": [
+            {
+                "id_producto": d.id_producto,
+                "cantidad": d.cantidad
+            } for d in tarea.detalles
+        ]
+    }
