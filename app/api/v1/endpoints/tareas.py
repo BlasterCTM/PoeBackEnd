@@ -29,22 +29,30 @@ def agregar_producto_detalle(
 ):
     id_producto = body.get("id_producto")
     cantidad = body.get("cantidad")
-    if not id_producto or cantidad is None:
-        raise HTTPException(status_code=422, detail="id_producto y cantidad son obligatorios.")
+    # Validación de campos requeridos y reglas de negocio
+    if id_producto is None:
+        raise HTTPException(status_code=422, detail=[{"loc": ["body", "id_producto"], "msg": "Campo requerido", "type": "value_error.missing"}])
+    if cantidad is None:
+        raise HTTPException(status_code=422, detail=[{"loc": ["body", "cantidad"], "msg": "Campo requerido", "type": "value_error.missing"}])
+    if not isinstance(cantidad, int):
+        raise HTTPException(status_code=422, detail="La cantidad debe ser un número entero.")
+    if cantidad <= 0:
+        raise HTTPException(status_code=422, detail="La cantidad debe ser mayor que 0.")
     try:
         detalle, producto = agregar_producto_a_detalle(db, id_tarea, id_producto, cantidad, current_user)
     except Exception as e:
         msg = str(e)
         if "ya está asignado" in msg:
             raise HTTPException(status_code=409, detail=msg)
+        if "La cantidad debe ser mayor a cero." in msg:
+            raise HTTPException(status_code=422, detail="La cantidad debe ser mayor que 0.")
+        if "La tarea no existe." in msg or "El producto no existe." in msg:
+            raise HTTPException(status_code=422, detail=msg)
         raise HTTPException(status_code=400, detail=msg)
     return {
-        "mensaje": "Producto agregado correctamente a la tarea.",
-        "detalle_tarea": {
-            "id_producto": detalle.id_producto,
-            "nombre_producto": producto.nombre,
-            "cantidad": detalle.cantidad
-        }
+        "mensaje": "Producto agregado correctamente",
+        "producto": producto.nombre,
+        "cantidad": detalle.cantidad
     }
 
 @router.delete("/tareas/{id_tarea}/detalle/{id_producto}")
