@@ -18,8 +18,10 @@ from app.models.supervision import Supervision
 from app.models.tarea import Tarea
 from datetime import date
 from pydantic import BaseModel
+from app.repositories.supervision import SupervisionRepository
 
 router = APIRouter()
+supervision_repository = SupervisionRepository()
 
 @router.post("/tareas/{id_tarea}/detalle")
 def agregar_producto_detalle(
@@ -240,29 +242,70 @@ def asignar_reponedor_a_tarea(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    # Buscar la tarea
     tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
     if not tarea:
         raise HTTPException(status_code=404, detail="Tarea no encontrada.")
-    # Validar que no tenga ya reponedor asignado
-    if tarea.id_reponedor is not None:
-        raise HTTPException(status_code=409, detail="La tarea ya tiene un reponedor asignado.")
-    # Validar que el reponedor existe y es rol correcto
+
+    # Permitir dejar la tarea sin asignar
+    if not hasattr(body, 'id_reponedor') or body.id_reponedor is None:
+        tarea.id_reponedor = None
+        estado_sin_asignar = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == "sin asignar").first()
+        if estado_sin_asignar:
+            tarea.estado_id = estado_sin_asignar.estado_id
+        db.commit()
+        db.refresh(tarea)
+        return {
+            "mensaje": "Tarea dejada sin asignar.",
+            "tarea": {
+                "id": tarea.id_tarea,
+                "estado": "sin asignar",
+                "reponedor": None
+            }
+        }
+
+    # Validar que el reponedor existe, es rol correcto y está activo
     reponedor = db.query(Usuario).filter(Usuario.id_usuario == body.id_reponedor).first()
-    if not reponedor or reponedor.rol.nombre_rol.lower() != "reponedor":
+    if not reponedor or reponedor.rol.nombre_rol != RolEnum.REPONEDOR.value:
         raise HTTPException(status_code=422, detail="El usuario no es un reponedor válido.")
+    if reponedor.estado != "activo":
+        raise HTTPException(status_code=422, detail="El reponedor no está disponible (no activo).")
+
+    # Validar autoridad del supervisor
+    if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value:
+        supervision = db.query(Supervision).filter(
+            Supervision.supervisor_id == current_user.id_usuario,
+            Supervision.reponedor_id == reponedor.id_usuario
+        ).first()
+        if not supervision:
+            raise HTTPException(status_code=403, detail="No tienes autoridad sobre este reponedor.")
+
+    # Validar tareas activas del reponedor
+    estados_activos = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.in_(["pendiente", "en progreso"]))
+    ids_estados = [e.estado_id for e in estados_activos]
+    tarea_activa = db.query(Tarea).filter(
+        Tarea.id_reponedor == reponedor.id_usuario,
+        Tarea.estado_id.in_(ids_estados)
+    ).first()
+    if tarea_activa:
+        raise HTTPException(
+            status_code=409,
+            detail=f"El reponedor ya tiene una tarea en curso (ID: {tarea_activa.id_tarea}). Asigne a otro usuario o espere a que finalice."
+        )
+
     # Asignar reponedor y cambiar estado a 'pendiente'
-    tarea.id_reponedor = body.id_reponedor
+    tarea.id_reponedor = reponedor.id_usuario
     estado_pendiente = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == "pendiente").first()
     if estado_pendiente:
         tarea.estado_id = estado_pendiente.estado_id
     db.commit()
     db.refresh(tarea)
     return {
-        "mensaje": "Reponedor asignado correctamente.",
-        "id_tarea": tarea.id_tarea,
-        "id_reponedor": tarea.id_reponedor,
-        "estado": "pendiente"
+        "mensaje": f"Tarea asignada correctamente a {reponedor.nombre}.",
+        "tarea": {
+            "id": tarea.id_tarea,
+            "estado": "pendiente",
+            "reponedor": reponedor.nombre
+        }
     }
 
 @router.get("/tareas/disponibles", response_model=list[TareaResponse])
