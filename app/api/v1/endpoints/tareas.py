@@ -135,6 +135,29 @@ def crear_tarea(
             raise HTTPException(status_code=422, detail="Los administradores deben proporcionar un ID de supervisor al crear una tarea.")
         id_supervisor = tarea_data.id_supervisor
 
+    # Validar que el punto no esté ocupado por una tarea activa
+    estados_bloqueo = ["pendiente", "en progreso"]
+    resultado = db.query(Tarea, EstadoTarea, UsuarioModel).\
+        join(EstadoTarea, Tarea.estado_id == EstadoTarea.estado_id).\
+        join(UsuarioModel, Tarea.id_reponedor == UsuarioModel.id_usuario).\
+        filter(
+            Tarea.id_punto == tarea_data.id_punto,
+            EstadoTarea.nombre_estado.in_(estados_bloqueo)
+        ).first()
+    if resultado:
+        tarea_conflictiva, estado, reponedor_conflictivo = resultado
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "mensaje": "Conflicto: El punto ya está en uso por otra tarea activa.",
+                "tarea_conflictiva": {
+                    "id_tarea": tarea_conflictiva.id_tarea,
+                    "estado": estado.nombre_estado,
+                    "reponedor": reponedor_conflictivo.nombre
+                }
+            }
+        )
+
     # Crear la tarea
     estado_inicial = 1  # pendiente
     tarea = Tarea(

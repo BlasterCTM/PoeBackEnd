@@ -178,3 +178,47 @@ def test_eliminar_producto_detalle():
     response = client.delete(f"/tareas/{id_tarea}/detalle/2", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert "eliminado" in response.text
+
+def test_no_permite_tarea_en_punto_ocupado():
+    poblar_datos_minimos()
+    token = get_token_admin()
+    # Limpiar tareas activas del punto antes de probar
+    session = Session()
+    from app.models.tarea import Tarea
+    from app.models.estado_tarea import EstadoTarea
+    tareas_activas = session.query(Tarea).join(EstadoTarea, Tarea.estado_id == EstadoTarea.estado_id).filter(
+        Tarea.id_punto == 1,
+        EstadoTarea.nombre_estado.in_(["pendiente", "en progreso"])
+    ).all()
+    for t in tareas_activas:
+        # Cambiar estado a "completada" (debe existir ese estado en la tabla)
+        estado_completada = session.query(EstadoTarea).filter(EstadoTarea.nombre_estado == "completada").first()
+        if estado_completada:
+            t.estado_id = estado_completada.estado_id
+    session.commit()
+    session.close()
+    # Crear primera tarea (deja el punto en estado pendiente)
+    data1 = {
+        "id_reponedor": 3,
+        "id_punto": 1,
+        "id_supervisor": 2,
+        "productos": [
+            {"id_producto": 1, "cantidad": 5}
+        ]
+    }
+    response1 = client.post("/tareas", json=data1, headers={"Authorization": f"Bearer {token}"})
+    assert response1.status_code == 201, f"Error inesperado: {response1.text}"
+    # Intentar crear otra tarea en el mismo punto
+    data2 = {
+        "id_reponedor": 3,
+        "id_punto": 1,
+        "id_supervisor": 2,
+        "productos": [
+            {"id_producto": 2, "cantidad": 2}
+        ]
+    }
+    response2 = client.post("/tareas", json=data2, headers={"Authorization": f"Bearer {token}"})
+    assert response2.status_code == 409, f"Debe rechazar por conflicto, obtuvo: {response2.status_code} - {response2.text}"
+    detail = response2.json().get("detail")
+    assert detail and "tarea_conflictiva" in detail, f"Respuesta inesperada: {response2.text}"
+    assert detail["tarea_conflictiva"]["estado"] in ["pendiente", "en progreso"]
