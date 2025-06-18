@@ -406,3 +406,82 @@ def detalle_tarea(
             } for d in tarea.detalles
         ]
     }
+
+class ReemplazoProductoRequest(BaseModel):
+    id_producto_actual: int
+    id_producto_nuevo: int
+    cantidad: int
+
+@router.put("/tareas/{id_tarea}/detalle/reemplazar")
+def reemplazar_producto_detalle(
+    id_tarea: int,
+    body: ReemplazoProductoRequest = Body(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Validar cantidad
+    if body.cantidad <= 0:
+        raise HTTPException(status_code=422, detail="La cantidad debe ser mayor a 0.")
+    # Eliminar producto actual
+    detalle_actual = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea, DetalleTarea.id_producto == body.id_producto_actual).first()
+    if not detalle_actual:
+        raise HTTPException(status_code=404, detail="El producto actual no está en el detalle de la tarea.")
+    # Validar permisos (igual que en agregar/eliminar)
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="La tarea no existe.")
+    if current_user.rol.nombre_rol.lower() == "supervisor":
+        supervision = db.query(Supervision).filter(Supervision.reponedor_id == tarea.id_reponedor, Supervision.supervisor_id == current_user.id_usuario).first()
+        if not supervision:
+            raise HTTPException(status_code=403, detail="No tienes permisos para modificar esta tarea.")
+    elif current_user.rol.nombre_rol.lower() != "administrador":
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar tareas.")
+    db.delete(detalle_actual)
+    db.commit()
+    # Validar que el nuevo producto no esté ya en la tarea
+    existe = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea, DetalleTarea.id_producto == body.id_producto_nuevo).first()
+    if existe:
+        raise HTTPException(status_code=409, detail="El producto nuevo ya está asignado a la tarea.")
+    # Agregar el nuevo producto
+    nuevo_detalle = DetalleTarea(id_tarea=id_tarea, id_producto=body.id_producto_nuevo, cantidad=body.cantidad)
+    db.add(nuevo_detalle)
+    db.commit()
+    producto_nuevo = db.query(Producto).filter(Producto.id_producto == body.id_producto_nuevo).first()
+    return {
+        "mensaje": "Producto reemplazado correctamente.",
+        "producto": producto_nuevo.nombre if producto_nuevo else None,
+        "nueva_cantidad": body.cantidad
+    }
+
+@router.put("/tareas/{id_tarea}/detalle/{id_producto}")
+def actualizar_cantidad_producto_detalle(
+    id_tarea: int,
+    id_producto: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    cantidad = body.get("cantidad")
+    if cantidad is None or not isinstance(cantidad, int) or cantidad <= 0:
+        raise HTTPException(status_code=422, detail="La cantidad debe ser un número entero mayor a 0.")
+    detalle = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea, DetalleTarea.id_producto == id_producto).first()
+    if not detalle:
+        raise HTTPException(status_code=404, detail="El producto no está en el detalle de la tarea.")
+    # Validar permisos (igual que en agregar/eliminar)
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="La tarea no existe.")
+    if current_user.rol.nombre_rol.lower() == "supervisor":
+        supervision = db.query(Supervision).filter(Supervision.reponedor_id == tarea.id_reponedor, Supervision.supervisor_id == current_user.id_usuario).first()
+        if not supervision:
+            raise HTTPException(status_code=403, detail="No tienes permisos para modificar esta tarea.")
+    elif current_user.rol.nombre_rol.lower() != "administrador":
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar tareas.")
+    detalle.cantidad = cantidad
+    db.commit()
+    producto = db.query(Producto).filter(Producto.id_producto == id_producto).first()
+    return {
+        "mensaje": "Cantidad actualizada correctamente.",
+        "producto": producto.nombre if producto else None,
+        "nueva_cantidad": cantidad
+    }
