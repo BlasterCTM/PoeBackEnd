@@ -76,7 +76,8 @@ def init_estados_tarea():
             (1, "pendiente"),
             (2, "en progreso"),
             (3, "completada"),
-            (4, "cancelada")
+            (4, "cancelada"),
+            (5, "sin asignar")
         ]
         for estado_id, nombre_estado in estados:
             existe = db_session.query(EstadoTarea).filter(EstadoTarea.estado_id == estado_id).first()
