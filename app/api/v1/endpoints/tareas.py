@@ -9,6 +9,14 @@ from app.repositories.detalle_tarea import agregar_producto_a_detalle, eliminar_
 from app.repositories.tarea import tarea_repository
 from app.models.producto import Producto
 from app.schemas.tarea import TareaCreate, TareaResponse
+from app.models.punto_reposicion import PuntoReposicion
+from app.models.usuario import Usuario as UsuarioModel
+from app.models.detalle_tarea import DetalleTarea
+from app.models.producto import Producto as ProductoModel
+from app.models.estado_tarea import EstadoTarea
+from app.models.supervision import Supervision
+from app.models.tarea import Tarea
+from datetime import date
 
 router = APIRouter()
 
@@ -72,42 +80,105 @@ def obtener_detalle_tarea(
         } for d in detalles
     ]
 
-@router.post("/tareas", response_model=TareaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/tareas", response_model=dict, status_code=status.HTTP_201_CREATED)
 def crear_tarea(
     tarea_data: TareaCreate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Crea una nueva tarea"""
     # Verificar permisos
     if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo administradores o supervisores pueden crear tareas."
         )
-    
-    try:
-        # Determinar el ID del supervisor
-        if current_user.rol.nombre_rol.lower() == "supervisor":
-            # Si es supervisor, usa su propio ID
-            id_supervisor = current_user.id_usuario
-        else:
-            # Si es administrador, debe proporcionar un ID de supervisor
-            if not tarea_data.id_supervisor:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Los administradores deben proporcionar un ID de supervisor al crear una tarea."
-                )
-            id_supervisor = tarea_data.id_supervisor
-        
-        # Crear la tarea
-        tarea = tarea_repository.crear_tarea(
-            db=db,
-            id_supervisor=id_supervisor,
-            id_punto=tarea_data.id_punto,
-            id_reponedor=tarea_data.id_reponedor,
-            current_user=current_user
-        )
-        return tarea
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Validar productos (ya validado por el esquema, pero doble check)
+    if not tarea_data.productos or len(tarea_data.productos) == 0:
+        raise HTTPException(status_code=422, detail="Debe incluir al menos un producto para la tarea.")
+    ids = [p.id_producto for p in tarea_data.productos]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status_code=422, detail="No se permiten productos repetidos en la tarea.")
+    for p in tarea_data.productos:
+        if p.cantidad <= 0:
+            raise HTTPException(status_code=422, detail="Las cantidades deben ser mayores a 0.")
+
+    # Validar punto de reposición
+    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea_data.id_punto).first()
+    if not punto:
+        raise HTTPException(status_code=422, detail="El punto de reposición no existe.")
+
+    # Validar reponedor
+    reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea_data.id_reponedor).first()
+    if not reponedor or reponedor.rol.nombre_rol.lower() != "reponedor":
+        raise HTTPException(status_code=422, detail="El reponedor no existe o no tiene el rol correcto.")
+
+    # Si supervisor, validar que el reponedor esté asignado a él
+    if current_user.rol.nombre_rol.lower() == "supervisor":
+        supervision = db.query(Supervision).filter(
+            Supervision.reponedor_id == tarea_data.id_reponedor,
+            Supervision.supervisor_id == current_user.id_usuario
+        ).first()
+        if not supervision:
+            raise HTTPException(status_code=403, detail="No tienes permisos para asignar tareas a este reponedor.")
+        id_supervisor = current_user.id_usuario
+    else:
+        if not tarea_data.id_supervisor:
+            raise HTTPException(status_code=422, detail="Los administradores deben proporcionar un ID de supervisor al crear una tarea.")
+        id_supervisor = tarea_data.id_supervisor
+
+    # Crear la tarea
+    estado_inicial = 1  # pendiente
+    tarea = Tarea(
+        fecha_creacion=date.today(),
+        estado_id=estado_inicial,
+        id_supervisor=id_supervisor,
+        id_reponedor=tarea_data.id_reponedor,
+        id_punto=tarea_data.id_punto
+    )
+    db.add(tarea)
+    db.commit()
+    db.refresh(tarea)
+
+    # Crear detalles de tarea
+    detalles = []
+    for prod in tarea_data.productos:
+        producto = db.query(ProductoModel).filter(ProductoModel.id_producto == prod.id_producto).first()
+        if not producto:
+            db.rollback()
+            raise HTTPException(status_code=422, detail=f"El producto con id {prod.id_producto} no existe.")
+        detalle = DetalleTarea(id_tarea=tarea.id_tarea, id_producto=prod.id_producto, cantidad=prod.cantidad)
+        db.add(detalle)
+        detalles.append({
+            "producto": producto.nombre,
+            "cantidad": prod.cantidad
+        })
+    db.commit()
+
+    # Obtener estado
+    estado_nombre = "pendiente"
+    estado = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first()
+    if estado:
+        estado_nombre = estado.nombre_estado
+
+    # Obtener info de punto
+    punto_dict = {
+        "pasillo": str(getattr(punto, "pasillo", "")),
+        "estanteria": str(getattr(punto, "estanteria", "")),
+        "nivel": getattr(punto, "nivel", None)
+    }
+
+    # Obtener nombre reponedor
+    reponedor_nombre = reponedor.nombre
+
+    return {
+        "mensaje": "Tarea creada exitosamente",
+        "tarea": {
+            "id_tarea": tarea.id_tarea,
+            "fecha_creacion": str(tarea.fecha_creacion),
+            "estado": estado_nombre,
+            "reponedor": reponedor_nombre,
+            "punto_reposicion": punto_dict,
+            "detalle": detalles
+        }
+    }

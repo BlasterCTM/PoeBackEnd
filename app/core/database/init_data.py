@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from app.core.database.database import db
 from app.models.usuario import Rol, Usuario, RolEnum
 from app.core.security.password import get_password_hash
+from app.models.estado_tarea import EstadoTarea
 
 def init_roles_and_admin():
     db_session = db.SessionLocal()
@@ -68,5 +69,28 @@ def init_roles_and_admin():
     finally:
         db_session.close()
 
+def init_estados_tarea():
+    db_session = db.SessionLocal()
+    try:
+        estados = [
+            (1, "pendiente"),
+            (2, "en progreso"),
+            (3, "completada"),
+            (4, "cancelada")
+        ]
+        for estado_id, nombre_estado in estados:
+            existe = db_session.query(EstadoTarea).filter(EstadoTarea.estado_id == estado_id).first()
+            if not existe:
+                db_session.add(EstadoTarea(estado_id=estado_id, nombre_estado=nombre_estado))
+        db_session.commit()
+        print("Estados de tarea inicializados/verificados")
+    except Exception as e:
+        print(f"Error al inicializar estados de tarea: {e}")
+        db_session.rollback()
+        raise
+    finally:
+        db_session.close()
+
 if __name__ == "__main__":
     init_roles_and_admin()
+    init_estados_tarea()

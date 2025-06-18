@@ -1,6 +1,10 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List
 from datetime import date
+
+class ProductoTareaCreate(BaseModel):
+    id_producto: int
+    cantidad: int
 
 class TareaBase(BaseModel):
     """Esquema base para tareas"""
@@ -10,6 +14,20 @@ class TareaBase(BaseModel):
 class TareaCreate(TareaBase):
     """Esquema para crear una tarea"""
     id_supervisor: Optional[int] = Field(None, description="ID del supervisor (requerido para administradores, ignorado para supervisores)")
+    productos: List[ProductoTareaCreate]
+
+    @model_validator(mode="after")
+    def validar_productos(cls, values):
+        productos = values.productos
+        if not productos or len(productos) == 0:
+            raise ValueError('Debe incluir al menos un producto para la tarea.')
+        ids = [p.id_producto for p in productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError('No se permiten productos repetidos en la tarea.')
+        for p in productos:
+            if p.cantidad <= 0:
+                raise ValueError('Las cantidades deben ser mayores a 0.')
+        return values
 
 class DetalleProductoResponse(BaseModel):
     """Esquema para respuesta de detalle de producto en tarea"""
