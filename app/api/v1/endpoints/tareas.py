@@ -374,6 +374,42 @@ def listar_tareas_supervisor(
         })
     return resultado
 
+@router.get("/tareas/reponedor")
+def listar_tareas_reponedor(
+    estado: str = Query(None, description="Filtrar por estado de tarea (opcional)"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol != RolEnum.REPONEDOR.value:
+        raise HTTPException(status_code=403, detail="Solo reponedores pueden acceder a esta vista.")
+    query = db.query(Tarea).join(EstadoTarea).filter(Tarea.id_reponedor == current_user.id_usuario)
+    if estado:
+        query = query.filter(EstadoTarea.nombre_estado.ilike(estado))
+    tareas = query.all()
+    resultado = []
+    for tarea in tareas:
+        estado_nombre = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first().nombre_estado
+        detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == tarea.id_tarea).all()
+        productos = []
+        for d in detalles:
+            prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
+            productos.append({
+                "nombre": prod.nombre if prod else None,
+                "cantidad": d.cantidad
+            })
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea.id_punto).first()
+        resultado.append({
+            "id_tarea": tarea.id_tarea,
+            "estado": estado_nombre,
+            "fecha_creacion": str(tarea.fecha_creacion),
+            "productos": productos,
+            "ubicacion": {
+                "estanteria": punto.estanteria if punto else None,
+                "nivel": punto.nivel if punto else None
+            }
+        })
+    return resultado
+
 @router.get("/tareas/{id_tarea}")
 def detalle_tarea(
     id_tarea: int,
