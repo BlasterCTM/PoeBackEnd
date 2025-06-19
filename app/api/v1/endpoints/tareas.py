@@ -24,6 +24,8 @@ from pydantic import BaseModel
 from app.repositories.supervision import SupervisionRepository
 import logging
 from pytz import timezone
+from fastapi import Query
+from typing import Optional
 
 router = APIRouter()
 supervision_repository = SupervisionRepository()
@@ -669,3 +671,47 @@ def obtener_detalle_tarea_simple(
             "cantidad": d.cantidad
         } for d in detalles
     ]
+
+@router.get("/productos/{id_producto}/historial")
+def historial_reposiciones_producto(
+    id_producto: int,
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    cantidad_min: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Validar rol
+    if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden consultar el historial.")
+    # Validar producto
+    producto = db.query(Producto).filter(Producto.id_producto == id_producto).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    # Query historial (ORM)
+    query = db.query(DetalleTarea.cantidad, Tarea.fecha_creacion, Tarea.id_tarea)
+    query = query.join(Tarea, DetalleTarea.id_tarea == Tarea.id_tarea)
+    query = query.filter(DetalleTarea.id_producto == id_producto)
+    if fecha_inicio:
+        query = query.filter(Tarea.fecha_creacion >= fecha_inicio)
+    if fecha_fin:
+        query = query.filter(Tarea.fecha_creacion <= fecha_fin)
+    if cantidad_min:
+        query = query.filter(DetalleTarea.cantidad >= cantidad_min)
+    historial = query.order_by(Tarea.fecha_creacion.desc()).all()
+    if not historial:
+        return {
+            "producto": producto.nombre,
+            "historial": [],
+            "mensaje": "Este producto aún no ha sido repuesto."
+        }
+    total_reposiciones = len(historial)
+    cantidad_total_repuesta = sum([h.cantidad for h in historial])
+    return {
+        "producto": producto.nombre,
+        "historial": [
+            {"fecha": str(h.fecha_creacion), "cantidad": h.cantidad, "tarea_id": h.id_tarea} for h in historial
+        ],
+        "total_reposiciones": total_reposiciones,
+        "cantidad_total_repuesta": cantidad_total_repuesta
+    }
