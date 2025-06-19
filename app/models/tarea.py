@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Date, ForeignKey
+from sqlalchemy import Column, Integer, Date, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.core.database.database import Base
 
@@ -10,6 +10,7 @@ class Tarea(Base):
     id_supervisor = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=False)
     id_reponedor = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
     id_punto = Column(Integer, ForeignKey("punto_reposicion.id_punto"), nullable=False)
+    fecha_hora_completada = Column(DateTime, nullable=True)
 
     # Relaciones
     detalles = relationship("DetalleTarea", back_populates="tarea")

@@ -19,10 +19,11 @@ from app.models.tarea import Tarea
 from app.models.mueble_reposicion import MuebleReposicion
 from app.models.objeto_mapa import ObjetoMapa
 from app.models.ubicacion_fisica import UbicacionFisica
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel
 from app.repositories.supervision import SupervisionRepository
 import logging
+from pytz import timezone
 
 router = APIRouter()
 supervision_repository = SupervisionRepository()
@@ -554,6 +555,47 @@ def cancelar_tarea(
         "mensaje": "Tarea cancelada correctamente.",
         "estado": "cancelada",
         "id_tarea": tarea.id_tarea
+    }
+
+@router.put("/tareas/{id_tarea}/completar", status_code=200)
+def completar_tarea(
+    id_tarea: int,
+    confirmado: bool = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Buscar tarea
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+    # Validar usuario reponedor asignado
+    if current_user.rol.nombre_rol.lower() != "reponedor" or int(tarea.id_reponedor) != int(current_user.id_usuario):
+        raise HTTPException(status_code=403, detail="Solo el reponedor asignado puede completar esta tarea.")
+    # Buscar estados válidos
+    estado_pendiente = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.ilike("pendiente")).first()
+    estado_en_progreso = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.ilike("en_progreso")).first()
+    estado_completada = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.ilike("completada")).first()
+    if not estado_completada:
+        raise HTTPException(status_code=500, detail="No existe el estado 'completada' en la base de datos.")
+    # Validar estado actual
+    if tarea.estado_id not in [estado_pendiente.estado_id if estado_pendiente else -1, estado_en_progreso.estado_id if estado_en_progreso else -1]:
+        raise HTTPException(status_code=400, detail="La tarea ya fue completada previamente o no está activa.")
+    # Confirmación explícita
+    if not confirmado:
+        raise HTTPException(status_code=400, detail="Se requiere confirmación para completar la tarea.")
+    # Actualizar tarea
+    tz_utc = timezone("UTC")
+    tz_chile = timezone("America/Santiago")
+    ahora_utc = datetime.now(tz_utc)
+    tarea.estado_id = estado_completada.estado_id
+    tarea.fecha_hora_completada = ahora_utc
+    db.commit()
+    db.refresh(tarea)
+    fecha_local = tarea.fecha_hora_completada.astimezone(tz_chile)
+    return {
+        "mensaje": "La tarea fue marcada como completada exitosamente.",
+        "estado": "completada",
+        "fecha_completada": fecha_local.isoformat()
     }
 
 @router.get("/tareas/{id_tarea}/detalle")
