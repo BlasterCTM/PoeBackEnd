@@ -64,6 +64,9 @@ def listar_detalle_tarea(db: Session, id_tarea: int, current_user: Usuario):
         supervision = db.query(Supervision).filter(Supervision.reponedor_id == tarea.id_reponedor, Supervision.supervisor_id == current_user.id_usuario).first()
         if not supervision:
             raise Exception("No tienes permisos para ver esta tarea.")
+    elif current_user.rol.nombre_rol.lower() == "reponedor":
+        if int(tarea.id_reponedor) != int(current_user.id_usuario):
+            raise Exception("No tienes permisos para ver esta tarea.")
     elif current_user.rol.nombre_rol.lower() != "administrador":
         raise Exception("No tienes permisos para ver tareas.")
     detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea).all()

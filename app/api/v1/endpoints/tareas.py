@@ -16,9 +16,13 @@ from app.models.producto import Producto as ProductoModel
 from app.models.estado_tarea import EstadoTarea
 from app.models.supervision import Supervision
 from app.models.tarea import Tarea
+from app.models.mueble_reposicion import MuebleReposicion
+from app.models.objeto_mapa import ObjetoMapa
+from app.models.ubicacion_fisica import UbicacionFisica
 from datetime import date
 from pydantic import BaseModel
 from app.repositories.supervision import SupervisionRepository
+import logging
 
 router = APIRouter()
 supervision_repository = SupervisionRepository()
@@ -71,25 +75,25 @@ def eliminar_producto_detalle(
         raise HTTPException(status_code=400, detail=str(e))
     return {"mensaje": "Producto eliminado del detalle de la tarea."}
 
-@router.get("/tareas/{id_tarea}/detalle")
-def obtener_detalle_tarea(
-    id_tarea: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    try:
-        detalles = listar_detalle_tarea(db, id_tarea, current_user)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    productos = db.query(Producto).all()
-    productos_dict = {p.id_producto: p.nombre for p in productos}
-    return [
-        {
-            "id_producto": d.id_producto,
-            "nombre_producto": productos_dict.get(d.id_producto, ""),
-            "cantidad": d.cantidad
-        } for d in detalles
-    ]
+# @router.get("/tareas/{id_tarea}/detalle")
+# def obtener_detalle_tarea(
+#     id_tarea: int,
+#     db: Session = Depends(get_db),
+#     current_user: Usuario = Depends(get_current_user)
+# ):
+#     try:
+#         detalles = listar_detalle_tarea(db, id_tarea, current_user)
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=str(e))
+#     productos = db.query(Producto).all()
+#     productos_dict = {p.id_producto: p.nombre for p in productos}
+#     return [
+#         {
+#             "id_producto": d.id_producto,
+#             "nombre_producto": productos_dict.get(d.id_producto, ""),
+#             "cantidad": d.cantidad
+#         } for d in detalles
+#     ]
 
 @router.post("/tareas", response_model=dict, status_code=status.HTTP_201_CREATED)
 def crear_tarea(
@@ -551,3 +555,75 @@ def cancelar_tarea(
         "estado": "cancelada",
         "id_tarea": tarea.id_tarea
     }
+
+@router.get("/tareas/{id_tarea}/detalle")
+def detalle_tarea_reponedor(
+    id_tarea: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+    # Comparar id_reponedor como int para evitar problemas de tipo y loguear
+    try:
+        id_usuario = int(current_user.id_usuario)
+    except Exception:
+        id_usuario = current_user.id_usuario
+    logging.warning(f"DETALLE_TAREA_DEBUG: tarea.id_reponedor={tarea.id_reponedor} (type={type(tarea.id_reponedor)}), usuario={id_usuario} (type={type(id_usuario)})")
+    if current_user.rol.nombre_rol != RolEnum.REPONEDOR.value:
+        raise HTTPException(status_code=403, detail="Solo reponedores pueden acceder a esta tarea.")
+    if int(tarea.id_reponedor) != int(id_usuario):
+        raise HTTPException(status_code=403, detail=f"No tienes acceso a esta tarea. (id_reponedor={tarea.id_reponedor}, usuario={id_usuario})")
+    estado_nombre = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first().nombre_estado
+    detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == tarea.id_tarea).all()
+    productos = []
+    for d in detalles:
+        prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea.id_punto).first() if tarea.id_punto else None
+        mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == punto.id_mueble).first() if punto and punto.id_mueble else None
+        objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first() if mueble and mueble.id_objeto else None
+        ubicacion = None
+        if objeto:
+            ubicacion_fisica = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).first()
+            if ubicacion_fisica:
+                ubicacion = {
+                    "pasillo": ubicacion_fisica.x,
+                    "estanteria": punto.estanteria if punto else None,
+                    "nivel": punto.nivel if punto else None
+                }
+        productos.append({
+            "nombre": prod.nombre if prod else None,
+            "cantidad": d.cantidad,
+            "ubicacion": ubicacion or {
+                "pasillo": None,
+                "estanteria": punto.estanteria if punto else None,
+                "nivel": punto.nivel if punto else None
+            }
+        })
+    return {
+        "id_tarea": tarea.id_tarea,
+        "estado": estado_nombre,
+        "fecha_creacion": str(tarea.fecha_creacion),
+        "productos": productos
+    }
+
+@router.get("/tareas/{id_tarea}/detalle-simple")
+def obtener_detalle_tarea_simple(
+    id_tarea: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    try:
+        detalles = listar_detalle_tarea(db, id_tarea, current_user)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    productos = db.query(Producto).all()
+    productos_dict = {p.id_producto: p.nombre for p in productos}
+    return [
+        {
+            "id_producto": d.id_producto,
+            "nombre_producto": productos_dict.get(d.id_producto, ""),
+            "cantidad": d.cantidad
+        } for d in detalles
+    ]
