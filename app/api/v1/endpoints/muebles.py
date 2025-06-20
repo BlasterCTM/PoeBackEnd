@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import SQLAlchemyError
 from app.core.database.database import get_db
 from app.models.mueble_reposicion import MuebleReposicion
 from app.models.objeto_mapa import ObjetoMapa
 from app.models.objeto_tipo import ObjetoTipo
 from app.models.ubicacion_fisica import UbicacionFisica
 from app.models.mapa import Mapa
+from app.models.punto_reposicion import PuntoReposicion
 
 router = APIRouter()
 
@@ -49,3 +51,44 @@ def listar_muebles_reposicion(db: Session = Depends(get_db)):
             }
         })
     return resultado
+
+@router.post("/muebles/reposicion", status_code=201)
+def crear_mueble_reposicion(
+    body: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    id_objeto = body.get("id_objeto")
+    filas = body.get("filas")
+    columnas = body.get("columnas")
+    if not id_objeto or not isinstance(filas, int) or not isinstance(columnas, int) or filas <= 0 or columnas <= 0:
+        raise HTTPException(status_code=422, detail="id_objeto, filas y columnas son requeridos y deben ser mayores a cero.")
+    try:
+        # Iniciar transacción
+        mueble = MuebleReposicion(id_objeto=id_objeto, filas=filas, columnas=columnas)
+        db.add(mueble)
+        db.flush()  # Para obtener id_mueble
+        puntos = []
+        for fila in range(1, filas+1):
+            for columna in range(1, columnas+1):
+                # Validar duplicidad
+                existe = db.query(PuntoReposicion).filter_by(id_mueble=mueble.id_mueble, nivel=fila, estanteria=columna).first()
+                if not existe:
+                    punto = PuntoReposicion(id_mueble=mueble.id_mueble, nivel=fila, estanteria=columna)
+                    db.add(punto)
+                    puntos.append(punto)
+        db.commit()
+        db.refresh(mueble)
+        return {
+            "mueble": {
+                "id_mueble": mueble.id_mueble,
+                "id_objeto": mueble.id_objeto,
+                "filas": mueble.filas,
+                "columnas": mueble.columnas
+            },
+            "puntos": [
+                {"id_punto": p.id_punto, "nivel": p.nivel, "estanteria": p.estanteria} for p in puntos
+            ]
+        }
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al crear mueble o puntos: {str(e)}")

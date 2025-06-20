@@ -17,6 +17,7 @@ from app.schemas.mapa_vista import (
 from app.schemas.usuario_punto import AsignarPuntoRequest
 from app.models.usuario_punto import UsuarioPunto
 from app.repositories.punto_reposicion import asignar_producto_a_punto, desasignar_producto_de_punto
+from sqlalchemy.exc import SQLAlchemyError
 
 router = APIRouter()
 
@@ -349,3 +350,41 @@ def desasignar_producto_punto(
         estanteria=punto.estanteria,
         producto=None
     )
+
+@router.post("/mapas", status_code=201)
+def crear_mapa(
+    body: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    nombre = body.get("nombre")
+    ancho = body.get("ancho")
+    alto = body.get("alto")
+    if not nombre or not isinstance(ancho, int) or not isinstance(alto, int) or ancho <= 0 or alto <= 0:
+        raise HTTPException(status_code=422, detail="nombre, ancho y alto son requeridos y deben ser mayores a cero.")
+    # Validar duplicidad de nombre
+    existe = db.query(Mapa).filter(Mapa.nombre == nombre).first()
+    if existe:
+        raise HTTPException(status_code=409, detail="Ya existe un mapa con ese nombre.")
+    try:
+        mapa = Mapa(nombre=nombre, ancho=ancho, alto=alto)
+        db.add(mapa)
+        db.flush()  # Para obtener id_mapa
+        ubicaciones = []
+        for x in range(ancho):
+            for y in range(alto):
+                ubic = UbicacionFisica(id_mapa=mapa.id_mapa, x=x, y=y)
+                db.add(ubic)
+                ubicaciones.append({"x": x, "y": y})
+        db.commit()
+        db.refresh(mapa)
+        return {
+            "id_mapa": mapa.id_mapa,
+            "nombre": mapa.nombre,
+            "ancho": mapa.ancho,
+            "alto": mapa.alto,
+            "total_ubicaciones": len(ubicaciones),
+            "ubicaciones": ubicaciones
+        }
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al crear mapa o ubicaciones: {str(e)}")
