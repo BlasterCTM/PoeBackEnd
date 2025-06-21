@@ -53,7 +53,7 @@ def listar_productos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
     page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=100),
     orden: str = Query("nombre", pattern="^(nombre|fecha)$"),
     estado: str = Query(None, pattern="^(activo|inactivo)?$")
 ):

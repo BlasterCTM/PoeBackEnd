@@ -16,13 +16,8 @@ def asignar_producto_a_punto(db: Session, id_punto: int, id_producto: int):
     db.refresh(punto)
     return punto
 
-# Asignar o reasignar un producto a un punto, limpiando la asignación anterior si existe
+# Asignar o reasignar un producto a un punto
 def asignar_o_reasignar_producto_a_punto(db: Session, id_producto: int, id_punto: int):
-    # Limpiar asignación anterior si existe
-    punto_anterior = db.query(PuntoReposicion).filter(PuntoReposicion.id_producto == id_producto).first()
-    if punto_anterior:
-        punto_anterior.id_producto = None
-        db.commit()
     # Verificar que el punto existe
     punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == id_punto).first()
     if not punto:
