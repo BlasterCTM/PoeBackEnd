@@ -16,7 +16,7 @@ class ProductoBase(BaseModel):
         return v
 
 class ProductoCreate(ProductoBase):
-    pass
+    id_usuario: int
 
 class ProductoOut(ProductoBase):
     id_producto: int

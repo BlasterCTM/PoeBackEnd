@@ -42,7 +42,7 @@ def crear_producto(
     # Generar código único si no se proporciona
     codigo_unico = producto.codigo_unico or str(uuid.uuid4())[:8].upper()
     try:
-        db_producto = create_producto(db, producto, id_usuario=current_user.id_usuario, codigo_unico=codigo_unico)
+        db_producto = create_producto(db, producto, id_usuario=producto.id_usuario, codigo_unico=codigo_unico)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return db_producto
