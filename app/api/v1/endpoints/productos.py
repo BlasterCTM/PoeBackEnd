@@ -59,7 +59,11 @@ def listar_productos(
 ):
     if not current_user:
         raise HTTPException(status_code=401, detail="No autenticado")
-    data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado)
+    # Filtrar por id_usuario solo si es supervisor
+    if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value:
+        data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado, id_usuario=current_user.id_usuario)
+    else:
+        data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado)
     return data
 
 
@@ -72,7 +76,9 @@ def buscar_productos_endpoint(
 ):
     if not current_user or current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
         raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden buscar productos.")
-    resultados = buscar_productos(db, nombre=nombre, categoria=categoria)
+    # Filtrar por id_usuario solo si es supervisor
+    id_usuario = current_user.id_usuario if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value else None
+    resultados = buscar_productos(db, nombre=nombre, categoria=categoria, id_usuario=id_usuario)
     if not resultados:
         return {"total": 0, "mensaje": "Sin resultados para los filtros aplicados."}
     return {
