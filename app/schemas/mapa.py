@@ -27,7 +27,7 @@ class ObjetoOut(BaseModel):
 class UbicacionOut(BaseModel):
     x: int
     y: int
-    objeto: ObjetoOut
+    objeto: Optional[ObjetoOut]
     mueble: Optional[MuebleOut]
 
 class MapaOut(BaseModel):
