@@ -35,11 +35,14 @@ def get_productos(
     page: int = 1,
     limit: int = 10,
     orden: str = "nombre",
-    estado: str = None
+    estado: str = None,
+    id_usuario: int = None  # Nuevo parámetro opcional
 ):
     query = db.query(Producto)
     if estado:
         query = query.filter(Producto.estado == estado)
+    if id_usuario is not None:
+        query = query.filter(Producto.id_usuario == id_usuario)
     total = query.count()
     # Ordenamiento seguro
     if orden == "nombre":
