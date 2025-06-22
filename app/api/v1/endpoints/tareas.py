@@ -111,20 +111,15 @@ def crear_tarea(
             detail="Solo administradores o supervisores pueden crear tareas."
         )
 
-    # Validar productos (ya validado por el esquema, pero doble check)
-    if not tarea_data.productos or len(tarea_data.productos) == 0:
-        raise HTTPException(status_code=422, detail="Debe incluir al menos un producto para la tarea.")
-    ids = [p.id_producto for p in tarea_data.productos]
+    # Validar puntos (ya validado por el esquema, pero doble check)
+    if not tarea_data.puntos or len(tarea_data.puntos) == 0:
+        raise HTTPException(status_code=422, detail="Debe incluir al menos un punto de reposición para la tarea.")
+    ids = [p.id_punto for p in tarea_data.puntos]
     if len(ids) != len(set(ids)):
-        raise HTTPException(status_code=422, detail="No se permiten productos repetidos en la tarea.")
-    for p in tarea_data.productos:
+        raise HTTPException(status_code=422, detail="No se permiten puntos de reposición repetidos en la tarea.")
+    for p in tarea_data.puntos:
         if p.cantidad <= 0:
             raise HTTPException(status_code=422, detail="Las cantidades deben ser mayores a 0.")
-
-    # Validar punto de reposición
-    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea_data.id_punto).first()
-    if not punto:
-        raise HTTPException(status_code=422, detail="El punto de reposición no existe.")
 
     # Validar reponedor solo si se envía
     reponedor = None
@@ -133,57 +128,28 @@ def crear_tarea(
         if not reponedor or reponedor.rol.nombre_rol.lower() != "reponedor":
             raise HTTPException(status_code=422, detail="El reponedor no existe o no tiene el rol correcto.")
 
-    # Si supervisor, validar que el reponedor esté asignado a él
-    if current_user.rol.nombre_rol.lower() == "supervisor" and tarea_data.id_reponedor is not None:
-        supervision = db.query(Supervision).filter(
-            Supervision.reponedor_id == tarea_data.id_reponedor,
-            Supervision.supervisor_id == current_user.id_usuario
-        ).first()
-        if not supervision:
-            raise HTTPException(status_code=403, detail="No tienes permisos para asignar tareas a este reponedor.")
+    # Asignar supervisor correctamente según el rol
+    if current_user.rol.nombre_rol.lower() == "supervisor":
         id_supervisor = current_user.id_usuario
+        # Si se asigna reponedor, validar que esté bajo su supervisión
+        if tarea_data.id_reponedor is not None:
+            supervision = db.query(Supervision).filter(
+                Supervision.reponedor_id == tarea_data.id_reponedor,
+                Supervision.supervisor_id == current_user.id_usuario
+            ).first()
+            if not supervision:
+                raise HTTPException(status_code=403, detail="No tienes permisos para asignar tareas a este reponedor.")
     else:
-        if not tarea_data.id_supervisor:
+        if not hasattr(tarea_data, "id_supervisor") or tarea_data.id_supervisor is None:
             raise HTTPException(status_code=422, detail="Los administradores deben proporcionar un ID de supervisor al crear una tarea.")
         id_supervisor = tarea_data.id_supervisor
 
-    # Validar que el punto no esté ocupado por una tarea activa
-    estados_bloqueo = ["pendiente", "en progreso"]
-    resultado = db.query(Tarea, EstadoTarea, UsuarioModel).\
-        join(EstadoTarea, Tarea.estado_id == EstadoTarea.estado_id).\
-        join(UsuarioModel, Tarea.id_reponedor == UsuarioModel.id_usuario, isouter=True).\
-        filter(
-            Tarea.id_punto == tarea_data.id_punto,
-            EstadoTarea.nombre_estado.in_(estados_bloqueo)
-        ).first()
-    if resultado:
-        tarea_conflictiva, estado, reponedor_conflictivo = resultado
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "mensaje": "Conflicto: El punto ya está en uso por otra tarea activa.",
-                "tarea_conflictiva": {
-                    "id_tarea": tarea_conflictiva.id_tarea,
-                    "estado": estado.nombre_estado,
-                    "reponedor": reponedor_conflictivo.nombre if reponedor_conflictivo else None
-                }
-            }
-        )
-
-    # Crear la tarea
-    if tarea_data.id_reponedor is None:
-        estado_inicial = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == "sin asignar").first()
-        if not estado_inicial:
-            raise HTTPException(status_code=500, detail="No existe el estado 'sin asignar' en la base de datos.")
-        estado_id = estado_inicial.estado_id
-    else:
-        estado_id = 1  # pendiente
+    # Crear la tarea principal
     tarea = Tarea(
         fecha_creacion=date.today(),
-        estado_id=estado_id,
+        estado_id=tarea_data.estado_id,
         id_supervisor=id_supervisor,
-        id_reponedor=tarea_data.id_reponedor,
-        id_punto=tarea_data.id_punto
+        id_reponedor=tarea_data.id_reponedor
     )
     db.add(tarea)
     db.commit()
@@ -191,16 +157,30 @@ def crear_tarea(
 
     # Crear detalles de tarea
     detalles = []
-    for prod in tarea_data.productos:
-        producto = db.query(ProductoModel).filter(ProductoModel.id_producto == prod.id_producto).first()
+    for punto in tarea_data.puntos:
+        punto_db = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == punto.id_punto).first()
+        if not punto_db:
+            db.rollback()
+            raise HTTPException(status_code=422, detail=f"El punto de reposición con id {punto.id_punto} no existe.")
+        if not punto_db.id_producto:
+            db.rollback()
+            raise HTTPException(status_code=422, detail=f"El punto de reposición {punto.id_punto} no tiene producto asignado.")
+        producto = db.query(ProductoModel).filter(ProductoModel.id_producto == punto_db.id_producto).first()
         if not producto:
             db.rollback()
-            raise HTTPException(status_code=422, detail=f"El producto con id {prod.id_producto} no existe.")
-        detalle = DetalleTarea(id_tarea=tarea.id_tarea, id_producto=prod.id_producto, cantidad=prod.cantidad)
+            raise HTTPException(status_code=422, detail=f"El producto con id {punto_db.id_producto} no existe.")
+        detalle = DetalleTarea(
+            id_tarea=tarea.id_tarea,
+            id_producto=punto_db.id_producto,
+            cantidad=punto.cantidad,
+            id_punto=punto.id_punto
+        )
         db.add(detalle)
         detalles.append({
-            "producto": producto.nombre,
-            "cantidad": prod.cantidad
+            "id_producto": producto.id_producto,
+            "nombre_producto": producto.nombre,
+            "cantidad": punto.cantidad,
+            "id_punto": punto.id_punto
         })
     db.commit()
 
@@ -208,36 +188,18 @@ def crear_tarea(
     estado = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first()
     estado_nombre = estado.nombre_estado if estado else ""
 
-    # Obtener info de punto
-    punto_dict = {
-        "pasillo": str(getattr(punto, "pasillo", "")),
-        "estanteria": str(getattr(punto, "estanteria", "")),
-        "nivel": getattr(punto, "nivel", None)
-    }
-
-    # Respuesta diferenciada
-    if tarea_data.id_reponedor is None:
-        return {
-            "mensaje": "Tarea creada sin reponedor.",
+    return {
+        "mensaje": "Tarea creada exitosamente",
+        "tarea": {
             "id_tarea": tarea.id_tarea,
+            "fecha_creacion": str(tarea.fecha_creacion),
             "estado": estado_nombre,
-            "reponedor": None,
-            "asignada": False
-        }
-    else:
-        reponedor_nombre = reponedor.nombre if reponedor else None
-        return {
-            "mensaje": "Tarea creada exitosamente",
-            "tarea": {
-                "id_tarea": tarea.id_tarea,
-                "fecha_creacion": str(tarea.fecha_creacion),
-                "estado": estado_nombre,
-                "reponedor": reponedor_nombre,
-                "punto_reposicion": punto_dict,
-                "detalle": detalles
-            },
-            "asignada": True
-        }
+            "id_supervisor": id_supervisor,
+            "id_reponedor": tarea.id_reponedor,
+            "detalle": detalles
+        },
+        "asignada": tarea.id_reponedor is not None
+    }
 
 class AsignarReponedorRequest(BaseModel):
     id_reponedor: int
@@ -352,7 +314,6 @@ def listar_tareas_supervisor(
             raise HTTPException(status_code=422, detail="Estado no válido.")
         query = query.filter(Tarea.estado_id == estado_obj.estado_id)
     tareas = query.all()
-    # Diccionario de colores por estado
     colores_estado = {
         "pendiente": "#f1c40f",
         "en progreso": "#3498db",
@@ -364,19 +325,31 @@ def listar_tareas_supervisor(
     for tarea in tareas:
         estado_nombre = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first().nombre_estado
         reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
-        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea.id_punto).first()
-        # Generar nombre de la tarea
-        nombre_tarea = f"Reposición estantería {punto.estanteria if punto else '-'} nivel {punto.nivel if punto else '-'}"
+        detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == tarea.id_tarea).all()
+        productos = []
+        ubicaciones = []
+        for d in detalles:
+            prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
+            punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == d.id_punto).first()
+            productos.append({
+                "nombre": prod.nombre if prod else None,
+                "cantidad": d.cantidad,
+                "ubicacion": {
+                    "estanteria": punto.estanteria if punto else None,
+                    "nivel": punto.nivel if punto else None
+                }
+            })
+            ubicaciones.append({
+                "estanteria": punto.estanteria if punto else None,
+                "nivel": punto.nivel if punto else None
+            })
         resultado.append({
             "id_tarea": tarea.id_tarea,
-            "nombre": nombre_tarea,
             "estado": estado_nombre,
             "color_estado": colores_estado.get(estado_nombre, "#bdc3c7"),
             "reponedor": reponedor.nombre if reponedor else None,
-            "punto_reposicion": {
-                "estanteria": punto.estanteria if punto else None,
-                "nivel": punto.nivel if punto else None
-            },
+            "productos": productos,
+            "ubicaciones": ubicaciones,
             "fecha_creacion": str(tarea.fecha_creacion)
         })
     return resultado
@@ -400,20 +373,20 @@ def listar_tareas_reponedor(
         productos = []
         for d in detalles:
             prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
+            punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == d.id_punto).first()
             productos.append({
                 "nombre": prod.nombre if prod else None,
-                "cantidad": d.cantidad
+                "cantidad": d.cantidad,
+                "ubicacion": {
+                    "estanteria": punto.estanteria if punto else None,
+                    "nivel": punto.nivel if punto else None
+                }
             })
-        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea.id_punto).first()
         resultado.append({
             "id_tarea": tarea.id_tarea,
             "estado": estado_nombre,
             "fecha_creacion": str(tarea.fecha_creacion),
-            "productos": productos,
-            "ubicacion": {
-                "estanteria": punto.estanteria if punto else None,
-                "nivel": punto.nivel if punto else None
-            }
+            "productos": productos
         })
     return resultado
 
@@ -426,28 +399,29 @@ def detalle_tarea(
     tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
     if not tarea:
         raise HTTPException(status_code=404, detail="Tarea no encontrada.")
-    # Seguridad: solo el supervisor creador o admin puede ver
     if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value and tarea.id_supervisor != current_user.id_usuario:
         raise HTTPException(status_code=403, detail="No tienes acceso a esta tarea.")
-    # Respuesta enriquecida
     estado_nombre = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first().nombre_estado
     reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
-    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea.id_punto).first()
+    detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == tarea.id_tarea).all()
+    productos = []
+    for d in detalles:
+        prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == d.id_punto).first()
+        productos.append({
+            "nombre": prod.nombre if prod else None,
+            "cantidad": d.cantidad,
+            "ubicacion": {
+                "estanteria": punto.estanteria if punto else None,
+                "nivel": punto.nivel if punto else None
+            }
+        })
     return {
         "id_tarea": tarea.id_tarea,
         "estado": estado_nombre,
         "reponedor": reponedor.nombre if reponedor else None,
-        "punto_reposicion": {
-            "estanteria": punto.estanteria if punto else None,
-            "nivel": punto.nivel if punto else None
-        },
         "fecha_creacion": str(tarea.fecha_creacion),
-        "detalles": [
-            {
-                "id_producto": d.id_producto,
-                "cantidad": d.cantidad
-            } for d in tarea.detalles
-        ]
+        "productos": productos
     }
 
 class ReemplazoProductoRequest(BaseModel):
@@ -624,7 +598,7 @@ def detalle_tarea_reponedor(
     productos = []
     for d in detalles:
         prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
-        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == tarea.id_punto).first() if tarea.id_punto else None
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == d.id_punto).first() if d.id_punto else None
         mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == punto.id_mueble).first() if punto and punto.id_mueble else None
         objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first() if mueble and mueble.id_objeto else None
         ubicacion = None

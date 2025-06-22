@@ -388,3 +388,160 @@ def crear_mapa(
     except SQLAlchemyError as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al crear mapa o ubicaciones: {str(e)}")
+
+
+@router.get("/mapa/supervisor/vista", response_model=MapeoReposicionResponse)
+def visualizar_mapa_supervisor(
+    id_mapa: int = Query(None, description="ID del mapa a consultar (opcional)"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol.lower() != "supervisor":
+        raise HTTPException(status_code=403, detail="Solo los supervisores pueden acceder a este recurso.")
+
+    # Obtener ids de puntos asignados al supervisor y sus reponedores
+    from app.models.usuario_punto import UsuarioPunto
+    from app.models.supervision import Supervision
+
+    puntos_usuario = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario == current_user.id_usuario).all()
+    puntos_usuario_ids = [p[0] for p in puntos_usuario]
+
+    reponedores = db.query(Supervision.reponedor_id).filter(Supervision.supervisor_id == current_user.id_usuario).all()
+    reponedor_ids = [r[0] for r in reponedores]
+
+    puntos_reponedores = []
+    if reponedor_ids:
+        puntos_reponedores = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario.in_(reponedor_ids)).all()
+    puntos_reponedores_ids = [p[0] for p in puntos_reponedores]
+
+    puntos_ids_permitidos = set(puntos_usuario_ids + puntos_reponedores_ids)
+
+    # Seleccionar el mapa
+    mapa = db.query(Mapa).first() if id_mapa is None else db.query(Mapa).filter(Mapa.id_mapa == id_mapa).first()
+    if not mapa:
+        return {"mensaje": "No hay mapas registrados.", "mapa": None, "ubicaciones": []}
+    ubicaciones_db = db.query(UbicacionFisica).filter(UbicacionFisica.id_mapa == mapa.id_mapa).all()
+    if not ubicaciones_db:
+        return {"mensaje": "No hay ubicaciones cargadas.", "mapa": MapaOut(id=mapa.id_mapa, nombre=mapa.nombre, ancho=mapa.ancho, alto=mapa.alto), "ubicaciones": []}
+    ubicaciones = []
+    for ubic in ubicaciones_db:
+        objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == ubic.id_objeto).first() if ubic.id_objeto else None
+        objeto_out = None
+        mueble_out = None
+        if objeto:
+            tipo = db.query(ObjetoTipo).filter(ObjetoTipo.id_tipo == objeto.id_tipo).first()
+            objeto_out = ObjetoOut(
+                nombre=objeto.nombre,
+                tipo=tipo.nombre_tipo if tipo else "",
+                caminable=tipo.caminable if tipo else None
+            )
+            mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_objeto == objeto.id_objeto).first()
+            if mueble:
+                puntos_db = db.query(PuntoReposicion).filter(PuntoReposicion.id_mueble == mueble.id_mueble).all()
+                puntos_out = []
+                for punto in puntos_db:
+                    # Solo mostrar detalles si el punto pertenece al supervisor o sus reponedores
+                    producto_out = None
+                    if punto.id_punto in puntos_ids_permitidos:
+                        producto = db.query(Producto).filter(Producto.id_producto == punto.id_producto).first() if punto.id_producto else None
+                        if producto:
+                            producto_out = ProductoAsociado(
+                                nombre=producto.nombre,
+                                categoria=producto.categoria,
+                                unidad_tipo=producto.unidad_tipo,
+                                unidad_cantidad=producto.unidad_cantidad
+                            )
+                    puntos_out.append(PuntoReposicionOut(
+                        id_punto=punto.id_punto,
+                        id_mueble=punto.id_mueble,
+                        nivel=punto.nivel,
+                        estanteria=punto.estanteria,
+                        producto=producto_out
+                    ))
+                mueble_out = MuebleOut(
+                    filas=mueble.filas,
+                    columnas=mueble.columnas,
+                    puntos_reposicion=puntos_out
+                )
+        ubicaciones.append(UbicacionOut(
+            x=ubic.x,
+            y=ubic.y,
+            objeto=objeto_out,
+            mueble=mueble_out
+        ))
+    return {
+        "mapa": MapaOut(id=mapa.id_mapa, nombre=mapa.nombre, ancho=mapa.ancho, alto=mapa.alto),
+        "ubicaciones": ubicaciones
+    }
+
+
+@router.get("/mapa/reponedor/vista", response_model=MapeoReposicionResponse)
+def visualizar_mapa_reponedor(
+    id_mapa: int = Query(None, description="ID del mapa a consultar (opcional)"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol.nombre_rol.lower() != "reponedor":
+        raise HTTPException(status_code=403, detail="Solo los reponedores pueden acceder a este recurso.")
+
+    from app.models.usuario_punto import UsuarioPunto
+
+    puntos_usuario = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario == current_user.id_usuario).all()
+    puntos_ids_permitidos = set([p[0] for p in puntos_usuario])
+
+    # Seleccionar el mapa
+    mapa = db.query(Mapa).first() if id_mapa is None else db.query(Mapa).filter(Mapa.id_mapa == id_mapa).first()
+    if not mapa:
+        return {"mensaje": "No hay mapas registrados.", "mapa": None, "ubicaciones": []}
+    ubicaciones_db = db.query(UbicacionFisica).filter(UbicacionFisica.id_mapa == mapa.id_mapa).all()
+    if not ubicaciones_db:
+        return {"mensaje": "No hay ubicaciones cargadas.", "mapa": MapaOut(id=mapa.id_mapa, nombre=mapa.nombre, ancho=mapa.ancho, alto=mapa.alto), "ubicaciones": []}
+    ubicaciones = []
+    for ubic in ubicaciones_db:
+        objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == ubic.id_objeto).first() if ubic.id_objeto else None
+        objeto_out = None
+        mueble_out = None
+        if objeto:
+            tipo = db.query(ObjetoTipo).filter(ObjetoTipo.id_tipo == objeto.id_tipo).first()
+            objeto_out = ObjetoOut(
+                nombre=objeto.nombre,
+                tipo=tipo.nombre_tipo if tipo else "",
+                caminable=tipo.caminable if tipo else None
+            )
+            mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_objeto == objeto.id_objeto).first()
+            if mueble:
+                puntos_db = db.query(PuntoReposicion).filter(PuntoReposicion.id_mueble == mueble.id_mueble).all()
+                puntos_out = []
+                for punto in puntos_db:
+                    producto_out = None
+                    if punto.id_punto in puntos_ids_permitidos:
+                        producto = db.query(Producto).filter(Producto.id_producto == punto.id_producto).first() if punto.id_producto else None
+                        if producto:
+                            producto_out = ProductoAsociado(
+                                nombre=producto.nombre,
+                                categoria=producto.categoria,
+                                unidad_tipo=producto.unidad_tipo,
+                                unidad_cantidad=producto.unidad_cantidad
+                            )
+                    puntos_out.append(PuntoReposicionOut(
+                        id_punto=punto.id_punto,
+                        id_mueble=punto.id_mueble,
+                        nivel=punto.nivel,
+                        estanteria=punto.estanteria,
+                        producto=producto_out
+                    ))
+                mueble_out = MuebleOut(
+                    filas=mueble.filas,
+                    columnas=mueble.columnas,
+                    puntos_reposicion=puntos_out
+                )
+        ubicaciones.append(UbicacionOut(
+            x=ubic.x,
+            y=ubic.y,
+            objeto=objeto_out,
+            mueble=mueble_out
+        ))
+    return {
+        "mapa": MapaOut(id=mapa.id_mapa, nombre=mapa.nombre, ancho=mapa.ancho, alto=mapa.alto),
+        "ubicaciones": ubicaciones
+    }

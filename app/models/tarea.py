@@ -9,7 +9,6 @@ class Tarea(Base):
     estado_id = Column(Integer, ForeignKey("estado_tarea.estado_id"), nullable=False)
     id_supervisor = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=False)
     id_reponedor = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
-    id_punto = Column(Integer, ForeignKey("punto_reposicion.id_punto"), nullable=False)
     fecha_hora_completada = Column(DateTime, nullable=True)
 
     # Relaciones

@@ -8,6 +8,8 @@ class DetalleTarea(Base):
     id_tarea = Column(Integer, ForeignKey("tarea.id_tarea"), nullable=False)
     id_producto = Column(Integer, ForeignKey("producto.id_producto"), nullable=False)
     cantidad = Column(Integer, nullable=False)
+    id_punto = Column(Integer, ForeignKey("punto_reposicion.id_punto"), nullable=False)
 
     # Relaciones
     tarea = relationship("Tarea", back_populates="detalles")
+    punto = relationship("PuntoReposicion")
