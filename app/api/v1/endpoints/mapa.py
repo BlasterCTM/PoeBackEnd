@@ -301,19 +301,38 @@ def desasignar_punto_usuario(
     return {"mensaje": "Punto desasignado correctamente del reponedor."}
 
 @router.put("/puntos/{id_punto}/asignar-producto", response_model=PuntoReposicionOut)
-def asociar_producto_a_punto(
+def asignar_producto_a_punto(
     id_punto: int,
-    id_producto: int = Body(..., embed=True, description="ID del producto a asociar"),
+    body: dict = Body(...),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
+    id_producto = body.get("id_producto")
+    id_usuario = body.get("id_usuario")
+    if not id_producto or not id_usuario:
+        raise HTTPException(status_code=400, detail="Faltan datos para asignar producto y usuario.")
     if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
-        raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden asociar productos a puntos.")
-    try:
-        punto = asignar_producto_a_punto(db, id_punto, id_producto)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    # Construir respuesta con producto asociado
+        raise HTTPException(status_code=403, detail="No autorizado.")
+
+    # Asignar producto al punto
+    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == id_punto).first()
+    if not punto:
+        raise HTTPException(status_code=404, detail="Punto de reposición no encontrado.")
+    punto.id_producto = id_producto
+
+    # Asignar usuario al punto en la tabla intermedia
+    from app.models.usuario_punto import UsuarioPunto
+    usuario_punto = db.query(UsuarioPunto).filter(UsuarioPunto.id_punto == id_punto).first()
+    if usuario_punto:
+        usuario_punto.id_usuario = id_usuario
+    else:
+        usuario_punto = UsuarioPunto(id_usuario=id_usuario, id_punto=id_punto)
+        db.add(usuario_punto)
+
+    db.commit()
+    db.refresh(punto)
+
+    # Construir respuesta como antes
     producto = db.query(Producto).filter(Producto.id_producto == punto.id_producto).first() if punto.id_producto else None
     producto_out = None
     if producto:
