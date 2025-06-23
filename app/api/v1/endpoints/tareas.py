@@ -472,10 +472,10 @@ def reemplazar_producto_detalle(
         "nueva_cantidad": body.cantidad
     }
 
-@router.put("/tareas/{id_tarea}/detalle/{id_producto}")
+@router.put("/tareas/{id_tarea}/detalle/{id_punto}")
 def actualizar_cantidad_producto_detalle(
     id_tarea: int,
-    id_producto: int,
+    id_punto: int,
     body: dict = Body(...),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
@@ -483,9 +483,9 @@ def actualizar_cantidad_producto_detalle(
     cantidad = body.get("cantidad")
     if cantidad is None or not isinstance(cantidad, int) or cantidad <= 0:
         raise HTTPException(status_code=422, detail="La cantidad debe ser un número entero mayor a 0.")
-    detalle = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea, DetalleTarea.id_producto == id_producto).first()
+    detalle = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea, DetalleTarea.id_punto == id_punto).first()
     if not detalle:
-        raise HTTPException(status_code=404, detail="El producto no está en el detalle de la tarea.")
+        raise HTTPException(status_code=404, detail="El punto de reposición no está en el detalle de la tarea.")
     # Validar permisos (igual que en agregar/eliminar)
     tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
     if not tarea:
@@ -498,10 +498,9 @@ def actualizar_cantidad_producto_detalle(
         raise HTTPException(status_code=403, detail="No tienes permisos para modificar tareas.")
     detalle.cantidad = cantidad
     db.commit()
-    producto = db.query(Producto).filter(Producto.id_producto == id_producto).first()
     return {
         "mensaje": "Cantidad actualizada correctamente.",
-        "producto": producto.nombre if producto else None,
+        "id_punto": id_punto,
         "nueva_cantidad": cantidad
     }
 
