@@ -414,6 +414,7 @@ def detalle_tarea(
             "nombre": prod.nombre if prod else None,
             "cantidad": d.cantidad,
             "ubicacion": {
+                "id_punto": punto.id_punto if punto else None,
                 "estanteria": punto.estanteria if punto else None,
                 "nivel": punto.nivel if punto else None
             }
