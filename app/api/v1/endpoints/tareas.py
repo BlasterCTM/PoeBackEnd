@@ -410,6 +410,7 @@ def detalle_tarea(
         prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
         punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == d.id_punto).first()
         productos.append({
+            "id_producto": prod.id_producto,
             "nombre": prod.nombre if prod else None,
             "cantidad": d.cantidad,
             "ubicacion": {
@@ -612,6 +613,7 @@ def detalle_tarea_reponedor(
                     "nivel": punto.nivel if punto else None
                 }
         productos.append({
+            "id_producto": prod.id_producto,
             "nombre": prod.nombre if prod else None,
             "cantidad": d.cantidad,
             "ubicacion": ubicacion or {
