@@ -14,6 +14,8 @@ from app.core.security.auth import get_current_user as get_current_user_core
 from app.core.database.database import get_db
 from fastapi.security import OAuth2PasswordBearer
 from app.core.database.init_data import init_estados_tarea
+from app.api.v1.endpoints import ruta
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -48,6 +50,7 @@ app.include_router(mapa.router)
 app.include_router(tareas.router)
 app.include_router(puntos.router)
 app.include_router(muebles.router)
+app.include_router(ruta.router)
 
 # Inicializar la base de datos al arrancar la aplicación
 @app.on_event("startup")
