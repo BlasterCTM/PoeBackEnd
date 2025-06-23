@@ -1,0 +1,53 @@
+# .gitignore para un proyecto Python (FastAPI, pytest, entorno virtual, VSCode)
+
+# Entornos virtuales
+venv/
+.env/
+.venv/
+ENV/
+
+# Archivos de configuración de entorno
+.env
+*.env
+
+# Archivos de Python compilados
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Archivos de logs y bases de datos temporales
+*.log
+*.sqlite3
+*.db
+
+# pytest y cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+.cache/
+
+# VSCode
+.vscode/
+
+# Archivos de usuario y sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de Postman
+*.postman_collection.json
+
+# Reportes y documentación generada
+reporte_completo_corregido_poe.txt
+INFORME_DETALLADO_COMPLETO_POE.md
+ANALISIS_TECNICO_PROFUNDO_POE.md
+RESUMEN_EJECUTIVO_POE.md
+README_DOCUMENTACION_COMPLETA.md
+
+# Otros
+*.bak
+*.swp
+*.swo
+
+# No ignores el propio .gitignore
+!.gitignore
