@@ -332,6 +332,7 @@ def listar_tareas_supervisor(
             prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
             punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == d.id_punto).first()
             productos.append({
+                "id_producto": prod.id_producto,
                 "nombre": prod.nombre if prod else None,
                 "cantidad": d.cantidad,
                 "ubicacion": {
