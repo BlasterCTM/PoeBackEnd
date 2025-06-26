@@ -38,6 +38,8 @@ from app.schemas.ruta_optimizada import (
 from app.repositories.ruta import calcular_ruta, generar_grafo
 from app.models.mapa import Mapa
 from app.models.objeto_tipo import ObjetoTipo
+import random
+import itertools
 
 router = APIRouter()
 supervision_repository = SupervisionRepository()
@@ -683,81 +685,20 @@ def detalle_tarea_reponedor(
                 "nivel": punto.nivel if punto else None
             }
         })
+    # Obtener reponedor para la respuesta
+    reponedor_obj = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first() if tarea.id_reponedor else None
     return {
         "id_tarea": tarea.id_tarea,
         "estado": estado_nombre,
-        "reponedor": reponedor.nombre if reponedor else None,
+        "reponedor": reponedor_obj.nombre if reponedor_obj else None,
         "fecha_creacion": str(tarea.fecha_creacion),
         "productos": productos
-    }
-
-@router.get("/tareas/{id_tarea}/detalle-simple")
-def obtener_detalle_tarea_simple(
-    id_tarea: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    try:
-        detalles = listar_detalle_tarea(db, id_tarea, current_user)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    productos = db.query(Producto).all()
-    productos_dict = {p.id_producto: p.nombre for p in productos}
-    return [
-        {
-            "id_producto": d.id_producto,
-            "nombre_producto": productos_dict.get(d.id_producto, ""),
-            "cantidad": d.cantidad
-        } for d in detalles
-    ]
-
-@router.get("/productos/{id_producto}/historial")
-def historial_reposiciones_producto(
-    id_producto: int,
-    fecha_inicio: Optional[str] = Query(None),
-    fecha_fin: Optional[str] = Query(None),
-    cantidad_min: Optional[int] = Query(None),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    # Validar rol
-    if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
-        raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden consultar el historial.")
-    # Validar producto
-    producto = db.query(Producto).filter(Producto.id_producto == id_producto).first()
-    if not producto:
-        raise HTTPException(status_code=404, detail="Producto no encontrado.")
-    # Query historial (ORM)
-    query = db.query(DetalleTarea.cantidad, Tarea.fecha_creacion, Tarea.id_tarea)
-    query = query.join(Tarea, DetalleTarea.id_tarea == Tarea.id_tarea)
-    query = query.filter(DetalleTarea.id_producto == id_producto)
-    if fecha_inicio:
-        query = query.filter(Tarea.fecha_creacion >= fecha_inicio)
-    if fecha_fin:
-        query = query.filter(Tarea.fecha_creacion <= fecha_fin)
-    if cantidad_min:
-        query = query.filter(DetalleTarea.cantidad >= cantidad_min)
-    historial = query.order_by(Tarea.fecha_creacion.desc()).all()
-    if not historial:
-        return {
-            "producto": producto.nombre,
-            "historial": [],
-            "mensaje": "Este producto aún no ha sido repuesto."
-        }
-    total_reposiciones = len(historial)
-    cantidad_total_repuesta = sum([h.cantidad for h in historial])
-    return {
-        "producto": producto.nombre,
-        "historial": [
-            {"fecha": str(h.fecha_creacion), "cantidad": h.cantidad, "tarea_id": h.id_tarea} for h in historial
-        ],
-        "total_reposiciones": total_reposiciones,
-        "cantidad_total_repuesta": cantidad_total_repuesta
     }
 
 @router.get("/tareas/{id_tarea}/ruta-optimizada", response_model=RutaOptimizadaResponse)
 def obtener_ruta_optimizada_tarea(
     id_tarea: int,
+    algoritmo: str = Query("vecino_mas_cercano", description="Algoritmo a utilizar: 'vecino_mas_cercano', 'fuerza_bruta', 'genetico'"),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -770,6 +711,19 @@ def obtener_ruta_optimizada_tarea(
     - Información de muebles y productos
     - Distancia total y algoritmo utilizado
     """
+    # Validar algoritmo seleccionado
+    algoritmos_disponibles = {
+        "vecino_mas_cercano": algoritmo_vecino_mas_cercano,
+        "fuerza_bruta": algoritmo_fuerza_bruta,
+        "genetico": algoritmo_genetico
+    }
+    
+    if algoritmo not in algoritmos_disponibles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Algoritmo '{algoritmo}' no válido. Algoritmos disponibles: {list(algoritmos_disponibles.keys())}"
+        )
+    
     # Validar que la tarea existe
     tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
     if not tarea:
@@ -872,37 +826,19 @@ def obtener_ruta_optimizada_tarea(
             detail="No se pudieron obtener las coordenadas para los puntos de reposición"
         )
     
-    # Calcular ruta optimizada usando algoritmo de punto más cercano (Nearest Neighbor)
-    # Punto de inicio: entrada del almacén (0, 0)
+    # Calcular ruta optimizada usando el algoritmo seleccionado
     inicio = (0, 0)
-    puntos_ordenados = []
     distancia_total = 0
 
     # Validar que el punto de inicio es caminable, si no, encontrar uno cercano
     if inicio not in coordenadas_caminables:
         inicio = encontrar_punto_accesible(inicio, coordenadas_caminables)
 
-    # Algoritmo del vecino más cercano para determinar el orden de visita
-    puntos_restantes = puntos_info.copy()
-    posicion_actual = inicio
-    orden = 1
-    orden_visita_coords = [inicio]
-    orden_visita_puntos = []
-
-    while puntos_restantes:
-        punto_mas_cercano = None
-        distancia_minima = float('inf')
-        for punto in puntos_restantes:
-            coordenadas_punto = punto['coordenadas']  # Usar coordenadas accesibles
-            distancia = abs(posicion_actual[0] - coordenadas_punto[0]) + abs(posicion_actual[1] - coordenadas_punto[1])
-            if distancia < distancia_minima:
-                distancia_minima = distancia
-                punto_mas_cercano = punto
-        if punto_mas_cercano:
-            orden_visita_coords.append(punto_mas_cercano['coordenadas'])  # Usar coordenadas accesibles
-            orden_visita_puntos.append(punto_mas_cercano)
-            posicion_actual = punto_mas_cercano['coordenadas']  # Usar coordenadas accesibles
-            puntos_restantes.remove(punto_mas_cercano)
+    # Ejecutar algoritmo seleccionado
+    algoritmo_func = algoritmos_disponibles[algoritmo]
+    orden_visita_coords, orden_visita_puntos, nombre_algoritmo, descripcion_algoritmo = algoritmo_func(
+        puntos_info, inicio, coordenadas_caminables
+    )
 
     # Calcular la ruta concatenada entre cada par consecutivo de puntos, asegurando que nunca pase ni termine sobre un mueble
     coordenadas_ruta_completa = []
@@ -981,7 +917,7 @@ def obtener_ruta_optimizada_tarea(
         while coordenadas_ruta_completa and coordenadas_ruta_completa[-1] in [(ubic.x, ubic.y) for ubic in ubicaciones_muebles]:
             print(f"[DEBUG RUTA] Última coordenada es mueble, recortando: {coordenadas_ruta_completa[-1]}")
             coordenadas_ruta_completa.pop()
-        # Si después de recortar no queda ninguna coordenada válida, marcar ruta inválida
+        # Si después de recortar no queda ninguna coordenda válida, marcar ruta inválida
         if not coordenadas_ruta_completa:
             ruta_valida = False
 
@@ -1042,8 +978,8 @@ def obtener_ruta_optimizada_tarea(
 
     # Crear información del algoritmo
     algoritmo_info = AlgoritmoResponse(
-        nombre="Vecino Más Cercano + A*",
-        descripcion="Algoritmo de optimización que utiliza el vecino más cercano para ordenar los puntos y A* para calcular las rutas entre ellos"
+        nombre=nombre_algoritmo,
+        descripcion=descripcion_algoritmo
     )
 
     # Calcular tiempo estimado (asumiendo 1 minuto por unidad de distancia + 2 minutos por punto)
@@ -1060,3 +996,150 @@ def obtener_ruta_optimizada_tarea(
         tiempo_estimado_minutos=tiempo_estimado,
         estado_tarea=estado_nombre
     )
+
+def algoritmo_vecino_mas_cercano(puntos_info, inicio, coordenadas_caminables):
+    """
+    Algoritmo del vecino más cercano - el actual implementado
+    """
+    puntos_restantes = puntos_info.copy()
+    posicion_actual = inicio
+    orden_visita_coords = [inicio]
+    orden_visita_puntos = []
+
+    while puntos_restantes:
+        punto_mas_cercano = None
+        distancia_minima = float('inf')
+        for punto in puntos_restantes:
+            coordenadas_punto = punto['coordenadas']
+            distancia = abs(posicion_actual[0] - coordenadas_punto[0]) + abs(posicion_actual[1] - coordenadas_punto[1])
+            if distancia < distancia_minima:
+                distancia_minima = distancia
+                punto_mas_cercano = punto
+        if punto_mas_cercano:
+            orden_visita_coords.append(punto_mas_cercano['coordenadas'])
+            orden_visita_puntos.append(punto_mas_cercano)
+            posicion_actual = punto_mas_cercano['coordenadas']
+            puntos_restantes.remove(punto_mas_cercano)
+    
+    return orden_visita_coords, orden_visita_puntos, "Vecino Más Cercano + A*", "Algoritmo de optimización que utiliza el vecino más cercano para ordenar los puntos y A* para calcular las rutas entre ellos"
+
+def algoritmo_fuerza_bruta(puntos_info, inicio, coordenadas_caminables):
+    """
+    Algoritmo de fuerza bruta - prueba todas las permutaciones posibles
+    """
+    if len(puntos_info) > 8:  # Limitar para evitar explosión combinatoria
+        # Si hay muchos puntos, usar una muestra aleatoria
+        puntos_muestra = random.sample(puntos_info, 8)
+    else:
+        puntos_muestra = puntos_info
+    
+    mejor_distancia = float('inf')
+    mejor_orden = None
+    
+    # Probar todas las permutaciones
+    for permutacion in itertools.permutations(puntos_muestra):
+        distancia_total = 0
+        pos_actual = inicio
+        
+        # Calcular distancia total de esta permutación
+        for punto in permutacion:
+            coord_punto = punto['coordenadas']
+            distancia_total += abs(pos_actual[0] - coord_punto[0]) + abs(pos_actual[1] - coord_punto[1])
+            pos_actual = coord_punto
+        
+        if distancia_total < mejor_distancia:
+            mejor_distancia = distancia_total
+            mejor_orden = permutacion
+    
+    # Construir resultado
+    orden_visita_coords = [inicio]
+    orden_visita_puntos = []
+    for punto in mejor_orden:
+        orden_visita_coords.append(punto['coordenadas'])
+        orden_visita_puntos.append(punto)
+    
+    return orden_visita_coords, orden_visita_puntos, "Fuerza Bruta + A*", "Algoritmo que prueba todas las permutaciones posibles para encontrar la ruta óptima (limitado a 8 puntos máximo)"
+
+def algoritmo_genetico(puntos_info, inicio, coordenadas_caminables):
+    """
+    Algoritmo genético simple para optimización de rutas
+    """
+    if len(puntos_info) < 2:
+        return algoritmo_vecino_mas_cercano(puntos_info, inicio, coordenadas_caminables)
+    
+    POBLACION_SIZE = min(20, len(puntos_info) * 2)
+    GENERACIONES = 50
+    TASA_MUTACION = 0.1
+    
+    def calcular_fitness(orden):
+        """Calcular fitness (inverso de la distancia total)"""
+        distancia_total = 0
+        pos_actual = inicio
+        for punto in orden:
+            coord_punto = punto['coordenadas']
+            distancia_total += abs(pos_actual[0] - coord_punto[0]) + abs(pos_actual[1] - coord_punto[1])
+            pos_actual = coord_punto
+        return 1.0 / (distancia_total + 1)  # +1 para evitar división por cero
+    
+    def crear_individuo():
+        """Crear un orden aleatorio de puntos"""
+        return random.sample(puntos_info, len(puntos_info))
+    
+    def cruzar(padre1, padre2):
+        """Cruzamiento de orden (OX)"""
+        tamano = len(padre1)
+        inicio_idx = random.randint(0, tamano - 2)
+        fin_idx = random.randint(inicio_idx + 1, tamano - 1)
+        
+        hijo = [None] * tamano
+        hijo[inicio_idx:fin_idx + 1] = padre1[inicio_idx:fin_idx + 1]
+        
+        restantes = [item for item in padre2 if item not in hijo]
+        idx_restante = 0
+        for i in range(tamano):
+            if hijo[i] is None:
+                hijo[i] = restantes[idx_restante]
+                idx_restante += 1
+        
+        return hijo
+    
+    def mutar(individuo):
+        """Mutación por intercambio"""
+        if random.random() < TASA_MUTACION:
+            i, j = random.sample(range(len(individuo)), 2)
+            individuo[i], individuo[j] = individuo[j], individuo[i]
+        return individuo
+    
+    # Inicializar población
+    poblacion = [crear_individuo() for _ in range(POBLACION_SIZE)]
+    
+    # Evolucionar
+    for generacion in range(GENERACIONES):
+        # Evaluar fitness
+        fitness_scores = [(individuo, calcular_fitness(individuo)) for individuo in poblacion]
+        fitness_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        # Seleccionar los mejores (elitismo)
+        nueva_poblacion = [individuo for individuo, _ in fitness_scores[:POBLACION_SIZE // 4]]
+        
+        # Generar nueva población
+        while len(nueva_poblacion) < POBLACION_SIZE:
+            padre1 = random.choices(fitness_scores[:POBLACION_SIZE // 2], weights=[f for _, f in fitness_scores[:POBLACION_SIZE // 2]])[0][0]
+            padre2 = random.choices(fitness_scores[:POBLACION_SIZE // 2], weights=[f for _, f in fitness_scores[:POBLACION_SIZE // 2]])[0][0]
+            hijo = cruzar(padre1, padre2)
+            hijo = mutar(hijo)
+            nueva_poblacion.append(hijo)
+        
+        poblacion = nueva_poblacion
+    
+    # Obtener el mejor resultado
+    mejor_individuo = max(poblacion, key=calcular_fitness)
+    
+    # Construir resultado
+    orden_visita_coords = [inicio]
+    orden_visita_puntos = []
+    for punto in mejor_individuo:
+        orden_visita_coords.append(punto['coordenadas'])
+        orden_visita_puntos.append(punto)
+    
+    return orden_visita_coords, orden_visita_puntos, "Algoritmo Genético + A*", f"Algoritmo genético con {GENERACIONES} generaciones y población de {POBLACION_SIZE} individuos para optimizar la ruta"
