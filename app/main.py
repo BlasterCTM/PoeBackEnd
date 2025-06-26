@@ -27,7 +27,7 @@ app = FastAPI(
 
 # Configurar CORS
 origins = [
-    "http://localhost:3000",  # Para React
+    "http://localhost:8080",  # Para React
     "http://localhost:4200",  # Para Angular
     "http://127.0.0.1:5500",  # Para VS Code Live Server
     "http://localhost:5173",  # Para Vite
