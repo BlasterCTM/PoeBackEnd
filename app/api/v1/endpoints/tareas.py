@@ -26,9 +26,81 @@ import logging
 from pytz import timezone
 from fastapi import Query
 from typing import Optional
+from app.schemas.ruta_optimizada import (
+    RutaOptimizadaResponse, 
+    PuntoRutaResponse, 
+    MuebleRutaResponse, 
+    ProductoRutaResponse, 
+    CoordenadaResponse, 
+    AlgoritmoResponse,
+    ErrorRutaResponse
+)
+from app.repositories.ruta import calcular_ruta, generar_grafo
+from app.models.mapa import Mapa
+from app.models.objeto_tipo import ObjetoTipo
 
 router = APIRouter()
 supervision_repository = SupervisionRepository()
+
+def encontrar_punto_accesible(coordenada_mueble: tuple, coordenadas_caminables: set) -> tuple:
+    """
+    Encuentra el punto caminable más cercano a las coordenadas del mueble.
+    Prioriza las 8 casillas adyacentes directas al mueble.
+    """
+    x, y = coordenada_mueble
+    
+    # VERIFICACIÓN: Si el mueble mismo es caminable, NO usarlo (es un error)
+    if coordenada_mueble in coordenadas_caminables:
+        print(f"WARNING: Mueble en {coordenada_mueble} está marcado como caminable, esto es incorrecto")
+        # No devolver la coordenada del mueble aunque esté en coordenadas_caminables
+    
+    # Primero: buscar en las 8 casillas adyacentes directas (prioridad alta)
+    direcciones_adyacentes = [
+        (0, 1), (0, -1), (1, 0), (-1, 0),  # arriba, abajo, derecha, izquierda
+        (1, 1), (1, -1), (-1, 1), (-1, -1)  # diagonales
+    ]
+    
+    for dx, dy in direcciones_adyacentes:
+        punto_candidato = (x + dx, y + dy)
+        if punto_candidato in coordenadas_caminables and punto_candidato != coordenada_mueble:
+            print(f"Punto accesible encontrado para mueble {coordenada_mueble}: {punto_candidato}")
+            return punto_candidato
+    
+    # Segundo: si no hay casillas adyacentes caminables, buscar en círculos concéntricos
+    for radio in range(2, 8):  # Buscar hasta 7 unidades de distancia
+        for dx in range(-radio, radio + 1):
+            for dy in range(-radio, radio + 1):
+                # Solo puntos en el borde del círculo actual
+                if abs(dx) == radio or abs(dy) == radio:
+                    punto_candidato = (x + dx, y + dy)
+                    if punto_candidato in coordenadas_caminables and punto_candidato != coordenada_mueble:
+                        print(f"Punto accesible encontrado (radio {radio}) para mueble {coordenada_mueble}: {punto_candidato}")
+                        return punto_candidato
+    
+    # Si no encuentra ningún punto cercano, usar una coordenada por defecto (0,0) o la más cercana al origen
+    print(f"ERROR: No se encontró punto accesible para mueble {coordenada_mueble}, usando (0,0)")
+    return (0, 0)  # En lugar de devolver la coordenada del mueble
+
+def encontrar_punto_accesible_cruz(coordenada_mueble: tuple, coordenadas_caminables: set) -> tuple:
+    """
+    Busca SOLO en cruz (arriba, abajo, izquierda, derecha) el punto caminable más cercano al mueble.
+    """
+    x, y = coordenada_mueble
+    direcciones_cruz = [
+        (0, 1), (0, -1), (1, 0), (-1, 0)  # arriba, abajo, derecha, izquierda
+    ]
+    for dx, dy in direcciones_cruz:
+        punto_candidato = (x + dx, y + dy)
+        if punto_candidato in coordenadas_caminables:
+            return punto_candidato
+    # Si no hay adyacente en cruz, busca en círculos concéntricos solo en cruz
+    for radio in range(2, 8):
+        for dx, dy in direcciones_cruz:
+            punto_candidato = (x + dx * radio, y + dy * radio)
+            if punto_candidato in coordenadas_caminables:
+                return punto_candidato
+    # Si no encuentra, retorna (0,0) o lanza error
+    return (0, 0)
 
 @router.post("/tareas/{id_tarea}/detalle")
 def agregar_producto_detalle(
@@ -600,24 +672,13 @@ def detalle_tarea_reponedor(
     productos = []
     for d in detalles:
         prod = db.query(Producto).filter(Producto.id_producto == d.id_producto).first()
-        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == d.id_punto).first() if d.id_punto else None
-        mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == punto.id_mueble).first() if punto and punto.id_mueble else None
-        objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first() if mueble and mueble.id_objeto else None
-        ubicacion = None
-        if objeto:
-            ubicacion_fisica = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).first()
-            if ubicacion_fisica:
-                ubicacion = {
-                    "pasillo": ubicacion_fisica.x,
-                    "estanteria": punto.estanteria if punto else None,
-                    "nivel": punto.nivel if punto else None
-                }
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == d.id_punto).first()
         productos.append({
             "id_producto": prod.id_producto,
             "nombre": prod.nombre if prod else None,
             "cantidad": d.cantidad,
-            "ubicacion": ubicacion or {
-                "pasillo": None,
+            "ubicacion": {
+                "id_punto": punto.id_punto if punto else None,
                 "estanteria": punto.estanteria if punto else None,
                 "nivel": punto.nivel if punto else None
             }
@@ -625,6 +686,7 @@ def detalle_tarea_reponedor(
     return {
         "id_tarea": tarea.id_tarea,
         "estado": estado_nombre,
+        "reponedor": reponedor.nombre if reponedor else None,
         "fecha_creacion": str(tarea.fecha_creacion),
         "productos": productos
     }
@@ -692,3 +754,318 @@ def historial_reposiciones_producto(
         "total_reposiciones": total_reposiciones,
         "cantidad_total_repuesta": cantidad_total_repuesta
     }
+
+@router.get("/tareas/{id_tarea}/ruta-optimizada", response_model=RutaOptimizadaResponse)
+def obtener_ruta_optimizada_tarea(
+    id_tarea: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Obtiene la ruta optimizada de reposición para una tarea específica.
+    
+    Retorna información detallada sobre:
+    - Puntos de reposición ordenados por ruta óptima
+    - Coordenadas completas de la ruta en el mapa
+    - Información de muebles y productos
+    - Distancia total y algoritmo utilizado
+    """
+    # Validar que la tarea existe
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    
+    # Validar permisos de acceso
+    if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value and tarea.id_supervisor != current_user.id_usuario:
+        raise HTTPException(status_code=403, detail="No tienes acceso a esta tarea")
+    elif current_user.rol.nombre_rol == RolEnum.REPONEDOR.value and tarea.id_reponedor != current_user.id_usuario:
+        raise HTTPException(status_code=403, detail="No tienes acceso a esta tarea")
+    
+    # Obtener información de reponedor y estado
+    reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
+    if not reponedor:
+        raise HTTPException(status_code=400, detail="La tarea no tiene reponedor asignado")
+    
+    estado = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first()
+    estado_nombre = estado.nombre_estado if estado else "Desconocido"
+    
+    # Obtener detalles de la tarea
+    detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea).all()
+    if not detalles:
+        raise HTTPException(status_code=400, detail="La tarea no tiene productos asignados")
+    
+    # Obtener el mapa y generar grafo de coordenadas caminables
+    mapa = db.query(Mapa).first()
+    if not mapa:
+        raise HTTPException(status_code=500, detail="No hay mapas configurados en el sistema")
+    
+    coordenadas_caminables = generar_grafo(db, mapa.id_mapa)
+
+    # FILTRAR explícitamente las coordenadas de los muebles del set de caminables
+    ubicaciones_muebles = db.query(UbicacionFisica).join(ObjetoMapa).join(ObjetoTipo).filter(ObjetoTipo.nombre_tipo == "mueble").all()
+    for ubic in ubicaciones_muebles:
+        if (ubic.x, ubic.y) in coordenadas_caminables:
+            coordenadas_caminables.remove((ubic.x, ubic.y))
+
+    # Procesar cada punto de reposición
+    puntos_info = []
+    coordenadas_puntos = []
+    
+    for detalle in detalles:
+        # Obtener punto de reposición
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == detalle.id_punto).first()
+        if not punto:
+            continue
+            
+        # Obtener mueble
+        mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == punto.id_mueble).first()
+        if not mueble:
+            continue
+            
+        # Obtener objeto del mapa
+        objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first()
+        if not objeto:
+            continue
+            
+        # Obtener ubicación física
+        ubicacion = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).first()
+        if not ubicacion:
+            continue
+            
+        # Obtener producto
+        producto = db.query(Producto).filter(Producto.id_producto == detalle.id_producto).first()
+        if not producto:
+            continue
+        
+        # Coordenadas del mueble
+        coordenada_mueble = (ubicacion.x, ubicacion.y)
+        
+        # Encontrar punto accesible SOLO en cruz
+        coordenada_accesible = encontrar_punto_accesible_cruz(coordenada_mueble, coordenadas_caminables)
+        
+        # Crear objetos de respuesta (mostrar coordenadas del mueble, pero usar las accesibles para ruta)
+        coordenada_display = CoordenadaResponse(x=ubicacion.x, y=ubicacion.y)
+        coordenadas_puntos.append(coordenada_accesible)  # Usar coordenada accesible para cálculo de ruta
+        
+        mueble_info = MuebleRutaResponse(
+            id_mueble=mueble.id_mueble,
+            nombre_objeto=objeto.nombre,
+            coordenadas=coordenada_display,  # Mostrar coordenadas originales del mueble
+            nivel=punto.nivel,
+            estanteria=punto.estanteria
+        )
+        
+        producto_info = ProductoRutaResponse(
+            id_producto=producto.id_producto,
+            nombre=producto.nombre,
+            categoria=producto.categoria,
+            cantidad=detalle.cantidad
+        )
+        
+        puntos_info.append({
+            'id_punto': punto.id_punto,
+            'mueble': mueble_info,
+            'producto': producto_info,
+            'coordenadas': coordenada_accesible,  # Usar coordenada accesible para cálculo
+            'coordenadas_originales': coordenada_mueble  # Guardar originales para referencia
+        })
+    
+    if not puntos_info:
+        raise HTTPException(
+            status_code=400, 
+            detail="No se pudieron obtener las coordenadas para los puntos de reposición"
+        )
+    
+    # Calcular ruta optimizada usando algoritmo de punto más cercano (Nearest Neighbor)
+    # Punto de inicio: entrada del almacén (0, 0)
+    inicio = (0, 0)
+    puntos_ordenados = []
+    distancia_total = 0
+
+    # Validar que el punto de inicio es caminable, si no, encontrar uno cercano
+    if inicio not in coordenadas_caminables:
+        inicio = encontrar_punto_accesible(inicio, coordenadas_caminables)
+
+    # Algoritmo del vecino más cercano para determinar el orden de visita
+    puntos_restantes = puntos_info.copy()
+    posicion_actual = inicio
+    orden = 1
+    orden_visita_coords = [inicio]
+    orden_visita_puntos = []
+
+    while puntos_restantes:
+        punto_mas_cercano = None
+        distancia_minima = float('inf')
+        for punto in puntos_restantes:
+            coordenadas_punto = punto['coordenadas']  # Usar coordenadas accesibles
+            distancia = abs(posicion_actual[0] - coordenadas_punto[0]) + abs(posicion_actual[1] - coordenadas_punto[1])
+            if distancia < distancia_minima:
+                distancia_minima = distancia
+                punto_mas_cercano = punto
+        if punto_mas_cercano:
+            orden_visita_coords.append(punto_mas_cercano['coordenadas'])  # Usar coordenadas accesibles
+            orden_visita_puntos.append(punto_mas_cercano)
+            posicion_actual = punto_mas_cercano['coordenadas']  # Usar coordenadas accesibles
+            puntos_restantes.remove(punto_mas_cercano)
+
+    # Calcular la ruta concatenada entre cada par consecutivo de puntos, asegurando que nunca pase ni termine sobre un mueble
+    coordenadas_ruta_completa = []
+    ruta_valida = True
+    for i in range(len(orden_visita_coords) - 1):
+        origen = orden_visita_coords[i]
+        destino = orden_visita_coords[i + 1]
+        print(f"[DEBUG RUTA] Segmento {i}: origen={origen}, destino={destino}")
+        ruta_segmento = calcular_ruta(
+            db,
+            mapa.id_mapa,
+            origen,
+            destino
+        )
+        if ruta_segmento:
+            ruta_segmento_filtrada = []
+            for idx, coord in enumerate(ruta_segmento):
+                if coord in [(ubic.x, ubic.y) for ubic in ubicaciones_muebles]:
+                    print(f"[DEBUG RUTA] ¡Ruta pasa por mueble! idx={idx}, coord={coord}")
+                    ruta_valida = False
+                    break
+                ruta_segmento_filtrada.append(coord)
+            print(f"[DEBUG RUTA] Segmento {i} ruta filtrada: {ruta_segmento_filtrada}")
+            if not ruta_valida:
+                break
+            if i == 0:
+                coordenadas_ruta_completa.extend(ruta_segmento_filtrada)
+            else:
+                coordenadas_ruta_completa.extend(ruta_segmento_filtrada[1:])
+            distancia_total += len(ruta_segmento_filtrada) - 1
+        else:
+            if i == 0:
+                coordenadas_ruta_completa.append(origen)
+            x1, y1 = origen
+            x2, y2 = destino
+            ruta_manual = []
+            if x1 < x2:
+                for x in range(x1 + 1, x2 + 1):
+                    if (x, y1) in [(ubic.x, ubic.y) for ubic in ubicaciones_muebles]:
+                        print(f"[DEBUG RUTA] ¡Ruta manual pasa por mueble! coord={(x, y1)}")
+                        ruta_valida = False
+                        break
+                    ruta_manual.append((x, y1))
+            elif x1 > x2:
+                for x in range(x1 - 1, x2 - 1, -1):
+                    if (x, y1) in [(ubic.x, ubic.y) for ubic in ubicaciones_muebles]:
+                        print(f"[DEBUG RUTA] ¡Ruta manual pasa por mueble! coord={(x, y1)}")
+                        ruta_valida = False
+                        break
+                    ruta_manual.append((x, y1))
+            if not ruta_valida:
+                break
+            x_final = x2
+            if y1 < y2:
+                for y in range(y1 + 1, y2 + 1):
+                    if (x_final, y) in [(ubic.x, ubic.y) for ubic in ubicaciones_muebles]:
+                        print(f"[DEBUG RUTA] ¡Ruta manual pasa por mueble! coord={(x_final, y)}")
+                        ruta_valida = False
+                        break
+                    ruta_manual.append((x_final, y))
+            elif y1 > y2:
+                for y in range(y1 - 1, y2 - 1, -1):
+                    if (x_final, y) in [(ubic.x, ubic.y) for ubic in ubicaciones_muebles]:
+                        print(f"[DEBUG RUTA] ¡Ruta manual pasa por mueble! coord={(x_final, y)}")
+                        ruta_valida = False
+                        break
+                    ruta_manual.append((x_final, y))
+            if not ruta_valida:
+                break
+            print(f"[DEBUG RUTA] Segmento {i} ruta manual: {ruta_manual}")
+            coordenadas_ruta_completa.extend(ruta_manual)
+            distancia_total += len(ruta_manual)
+
+    # FILTRO FINAL: recortar la ruta para que la última coordenada nunca sea la de un mueble
+    if coordenadas_ruta_completa:
+        while coordenadas_ruta_completa and coordenadas_ruta_completa[-1] in [(ubic.x, ubic.y) for ubic in ubicaciones_muebles]:
+            print(f"[DEBUG RUTA] Última coordenada es mueble, recortando: {coordenadas_ruta_completa[-1]}")
+            coordenadas_ruta_completa.pop()
+        # Si después de recortar no queda ninguna coordenada válida, marcar ruta inválida
+        if not coordenadas_ruta_completa:
+            ruta_valida = False
+
+    if not ruta_valida:
+        raise HTTPException(
+            status_code=400,
+            detail="No se pudo generar una ruta válida que no pase ni termine sobre un mueble. Verifique la disposición del mapa y los puntos de reposición."
+        )
+
+    # FILTRO FINAL: Asegurar que la última coordenada de la ruta NO sea la posición de un mueble
+    if coordenadas_ruta_completa:
+        ultima_coord = coordenadas_ruta_completa[-1]
+        muebles_coords = set((ubic.x, ubic.y) for ubic in ubicaciones_muebles)
+        if ultima_coord in muebles_coords:
+            # Buscar una casilla adyacente en cruz que sea caminable y esté en la ruta
+            adyacentes_cruz = [
+                (ultima_coord[0], ultima_coord[1] + 1),
+                (ultima_coord[0], ultima_coord[1] - 1),
+                (ultima_coord[0] + 1, ultima_coord[1]),
+                (ultima_coord[0] - 1, ultima_coord[1])
+            ]
+            # Buscar la última coordenada de la ruta que sea adyacente en cruz al mueble y caminable
+            nueva_ultima = None
+            for coord in reversed(coordenadas_ruta_completa):
+                if coord in muebles_coords:
+                    continue
+                if coord in adyacentes_cruz:
+                    nueva_ultima = coord
+                    break
+            if nueva_ultima:
+                # Recortar la ruta hasta la nueva última coordenada
+                idx_nueva = coordenadas_ruta_completa.index(nueva_ultima)
+                coordenadas_ruta_completa = coordenadas_ruta_completa[:idx_nueva + 1]
+            else:
+                # Si no hay adyacente, buscar la última coordenada de la ruta que NO sea mueble
+                for coord in reversed(coordenadas_ruta_completa):
+                    if coord not in muebles_coords:
+                        nueva_ultima = coord
+                        break
+                if nueva_ultima:
+                    idx_nueva = coordenadas_ruta_completa.index(nueva_ultima)
+                    coordenadas_ruta_completa = coordenadas_ruta_completa[:idx_nueva + 1]
+                else:
+                    # No se encontró, retornar error
+                    raise HTTPException(
+                        status_code=400,
+                        detail="No se pudo ajustar la ruta final para evitar terminar sobre un mueble."
+                    )
+
+    # Crear puntos de respuesta en el orden correcto
+    puntos_ordenados = []
+    for idx, punto in enumerate(orden_visita_puntos, start=1):
+        punto_respuesta = PuntoRutaResponse(
+            id_punto=punto['id_punto'],
+            mueble=punto['mueble'],
+            producto=punto['producto'],
+            orden_visita=idx
+        )
+        puntos_ordenados.append(punto_respuesta)
+
+    # Convertir coordenadas a objetos de respuesta
+    coordenadas_respuesta = [CoordenadaResponse(x=x, y=y) for x, y in coordenadas_ruta_completa]
+
+    # Crear información del algoritmo
+    algoritmo_info = AlgoritmoResponse(
+        nombre="Vecino Más Cercano + A*",
+        descripcion="Algoritmo de optimización que utiliza el vecino más cercano para ordenar los puntos y A* para calcular las rutas entre ellos"
+    )
+
+    # Calcular tiempo estimado (asumiendo 1 minuto por unidad de distancia + 2 minutos por punto)
+    tiempo_estimado = distancia_total + (len(puntos_ordenados) * 2)
+
+    return RutaOptimizadaResponse(
+        id_tarea=tarea.id_tarea,
+        reponedor=reponedor.nombre,
+        fecha_creacion=str(tarea.fecha_creacion),
+        puntos_reposicion=puntos_ordenados,
+        coordenadas_ruta=coordenadas_respuesta,
+        algoritmo_utilizado=algoritmo_info,
+        distancia_total=distancia_total,
+        tiempo_estimado_minutos=tiempo_estimado,
+        estado_tarea=estado_nombre
+    )
