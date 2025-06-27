@@ -1,0 +1,119 @@
+# .gitignore para proyecto POE - Entorno de desarrollo y pruebas
+
+# Entornos virtuales
+venv/
+.venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Archivos de Python compilados
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*$py.class
+
+# Distribución / empaquetado
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# pytest cache y cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Archivos de logs
+*.log
+logs/
+
+# Archivos temporales de editor
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*.swo
+*~
+
+# Archivos de sistema
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# IDEs
+.idea/
+.vscode/
+.spyderproject
+.spyproject
+.ropeproject
+
+# Bases de datos (comentadas para mantener en desarrollo)
+# *.db
+# *.sqlite
+# *.sqlite3
+# test.db
+
+# Variables de entorno (comentadas para mantener en desarrollo)
+# .env
+# .env.local
+# .env.development.local
+# .env.test.local
+# .env.production.local
+
+# Documentación generada temporalmente
+reporte_completo_corregido_poe.txt
+INFORME_DETALLADO_COMPLETO_POE.md
+ANALISIS_TECNICO_PROFUNDO_POE.md
+RESUMEN_EJECUTIVO_POE.md
+README_DOCUMENTACION_COMPLETA.md
+
+# Archivos temporales de JSON
+*.json.bak
+*.json.tmp
+
+# Postman collections (comentadas para mantener en desarrollo)
+# *.postman_collection.json
+
+# Node.js (si aplica)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos de documentación temporales
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.toc
