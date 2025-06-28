@@ -49,7 +49,13 @@ def crear_punto_reposicion(punto: PuntoReposicionCreate, db: Session = Depends(g
     ).first()
     if existente:
         raise HTTPException(status_code=409, detail="Ya existe un punto de reposición con esos datos.")
-    nuevo_punto = PuntoReposicion(**punto.dict())
+    nuevo_punto = PuntoReposicion(
+        id_mueble=punto.id_mueble,
+        nivel=punto.nivel,
+        estanteria=punto.estanteria,
+        id_producto=punto.id_producto,
+        id_usuario=punto.id_usuario
+    )
     db.add(nuevo_punto)
     db.commit()
     db.refresh(nuevo_punto)

@@ -1,5 +1,1 @@
-from pydantic import BaseModel
-
-class AsignarPuntoRequest(BaseModel):
-    id_usuario: int
-    id_punto: int
+# Este archivo ha sido eliminado porque la relación muchos-a-muchos ya no existe.

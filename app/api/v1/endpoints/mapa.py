@@ -14,10 +14,8 @@ from app.schemas.mapa import MapeoReposicionResponse, MapaOut, UbicacionOut, Obj
 from app.schemas.mapa_vista import (
     MapaVistaGraficaResponse, MapaVistaOut, ObjetoUbicacionOut, ObjetoMapaVistaOut, ObjetoTipoOut, MuebleVistaOut, PuntoReposicionVistaOut
 )
-from app.schemas.usuario_punto import AsignarPuntoRequest
-from app.models.usuario_punto import UsuarioPunto
-from app.repositories.punto_reposicion import asignar_producto_a_punto, desasignar_producto_de_punto
 from sqlalchemy.exc import SQLAlchemyError
+from app.repositories.punto_reposicion import desasignar_producto_de_punto
 
 router = APIRouter()
 
@@ -161,7 +159,6 @@ def vista_puntos_supervisor(
     if current_user.rol.nombre_rol.lower() != "supervisor":
         raise HTTPException(status_code=403, detail="Solo los supervisores pueden acceder a este recurso.")
 
-    from app.models.usuario_punto import UsuarioPunto
     from app.models.supervision import Supervision
     from app.models.mueble_reposicion import MuebleReposicion
     from app.models.punto_reposicion import PuntoReposicion
@@ -172,7 +169,7 @@ def vista_puntos_supervisor(
     from app.models.producto import Producto
 
     # Obtener puntos asignados por usuario_punto
-    puntos_usuario = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario == current_user.id_usuario).all()
+    puntos_usuario = db.query(PuntoReposicion.id_punto).filter(PuntoReposicion.id_usuario == current_user.id_usuario).all()
     puntos_usuario_ids = [p[0] for p in puntos_usuario]
 
     # Obtener reponedores supervisados por este supervisor
@@ -182,7 +179,7 @@ def vista_puntos_supervisor(
     # Obtener puntos asignados a los reponedores supervisados
     puntos_reponedores = []
     if reponedor_ids:
-        puntos_reponedores = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario.in_(reponedor_ids)).all()
+        puntos_reponedores = db.query(PuntoReposicion.id_punto).filter(PuntoReposicion.id_usuario.in_(reponedor_ids)).all()
     puntos_reponedores_ids = [p[0] for p in puntos_reponedores]
 
     # Unir todos los puntos asignados
@@ -249,56 +246,40 @@ def vista_puntos_supervisor(
 
 @router.post("/puntos/asignar")
 def asignar_punto_usuario(
-    datos: AsignarPuntoRequest,
+    id_usuario: int = Body(..., embed=True),
+    id_punto: int = Body(..., embed=True),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    # Solo administradores o supervisores pueden asignar puntos
     if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
         raise HTTPException(status_code=403, detail="No tienes permisos para asignar puntos.")
-    # Verificar existencia de usuario y punto
-    usuario = db.query(Usuario).filter(Usuario.id_usuario == datos.id_usuario).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
-    # Solo reponedores pueden ser asignados a puntos
-    if usuario.rol.nombre_rol.lower() != "reponedor":
-        raise HTTPException(status_code=409, detail="Solo los usuarios con rol 'Reponedor' pueden ser asignados a puntos de reposición.")
-    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == datos.id_punto).first()
-    if not punto:
-        raise HTTPException(status_code=404, detail="Punto de reposición no encontrado.")
-    # Verificar si ya está asignado
-    existe = db.query(UsuarioPunto).filter_by(id_usuario=datos.id_usuario, id_punto=datos.id_punto).first()
-    if existe:
-        raise HTTPException(status_code=409, detail="El punto ya está asignado a este usuario.")
-    # Asignar
-    asignacion = UsuarioPunto(id_usuario=datos.id_usuario, id_punto=datos.id_punto)
-    db.add(asignacion)
+    usuario = db.query(Usuario).filter(Usuario.id_usuario == id_usuario).first()
+    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == id_punto).first()
+    if not usuario or not punto:
+        raise HTTPException(status_code=404, detail="Usuario o punto no encontrado.")
+    punto.id_usuario = id_usuario
     db.commit()
-    return {"mensaje": "Punto asignado correctamente al reponedor."}
+    db.refresh(punto)
+    return {"mensaje": "Punto asignado correctamente", "id_punto": id_punto, "id_usuario": id_usuario}
 
 @router.delete("/puntos/desasignar")
 def desasignar_punto_usuario(
-    datos: AsignarPuntoRequest,
+    id_punto: int = Body(..., embed=True),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     # Solo administradores o supervisores pueden desasignar puntos
     if current_user.rol.nombre_rol.lower() not in ["administrador", "supervisor"]:
         raise HTTPException(status_code=403, detail="No tienes permisos para desasignar puntos.")
-    usuario = db.query(Usuario).filter(Usuario.id_usuario == datos.id_usuario).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
-    if usuario.rol.nombre_rol.lower() != "reponedor":
-        raise HTTPException(status_code=409, detail="Solo los usuarios con rol 'Reponedor' pueden ser desasignados de puntos de reposición.")
-    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == datos.id_punto).first()
+    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == id_punto).first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto de reposición no encontrado.")
-    asignacion = db.query(UsuarioPunto).filter_by(id_usuario=datos.id_usuario, id_punto=datos.id_punto).first()
-    if not asignacion:
-        raise HTTPException(status_code=404, detail="El punto no está asignado a este usuario.")
-    db.delete(asignacion)
+    if not punto.id_usuario:
+        raise HTTPException(status_code=404, detail="El punto no está asignado a ningún usuario.")
+    punto.id_usuario = None
     db.commit()
-    return {"mensaje": "Punto desasignado correctamente del reponedor."}
+    db.refresh(punto)
+    return {"mensaje": "Punto desasignado correctamente."}
 
 @router.put("/puntos/{id_punto}/asignar-producto", response_model=PuntoReposicionOut)
 def asignar_producto_a_punto(
@@ -314,21 +295,12 @@ def asignar_producto_a_punto(
     if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
         raise HTTPException(status_code=403, detail="No autorizado.")
 
-    # Asignar producto al punto
+    # Asignar producto y usuario al punto
     punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == id_punto).first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto de reposición no encontrado.")
     punto.id_producto = id_producto
-
-    # Asignar usuario al punto en la tabla intermedia
-    from app.models.usuario_punto import UsuarioPunto
-    usuario_punto = db.query(UsuarioPunto).filter(UsuarioPunto.id_punto == id_punto).first()
-    if usuario_punto:
-        usuario_punto.id_usuario = id_usuario
-    else:
-        usuario_punto = UsuarioPunto(id_usuario=id_usuario, id_punto=id_punto)
-        db.add(usuario_punto)
-
+    punto.id_usuario = id_usuario
     db.commit()
     db.refresh(punto)
 
@@ -418,11 +390,10 @@ def visualizar_mapa_supervisor(
     if current_user.rol.nombre_rol.lower() != "supervisor":
         raise HTTPException(status_code=403, detail="Solo los supervisores pueden acceder a este recurso.")
 
-    # Obtener ids de puntos asignados al supervisor y sus reponedores
-    from app.models.usuario_punto import UsuarioPunto
     from app.models.supervision import Supervision
 
-    puntos_usuario = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario == current_user.id_usuario).all()
+    # Obtener ids de puntos asignados al supervisor y sus reponedores
+    puntos_usuario = db.query(PuntoReposicion.id_punto).filter(PuntoReposicion.id_usuario == current_user.id_usuario).all()
     puntos_usuario_ids = [p[0] for p in puntos_usuario]
 
     reponedores = db.query(Supervision.reponedor_id).filter(Supervision.supervisor_id == current_user.id_usuario).all()
@@ -430,7 +401,7 @@ def visualizar_mapa_supervisor(
 
     puntos_reponedores = []
     if reponedor_ids:
-        puntos_reponedores = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario.in_(reponedor_ids)).all()
+        puntos_reponedores = db.query(PuntoReposicion.id_punto).filter(PuntoReposicion.id_usuario.in_(reponedor_ids)).all()
     puntos_reponedores_ids = [p[0] for p in puntos_reponedores]
 
     puntos_ids_permitidos = set(puntos_usuario_ids + puntos_reponedores_ids)
@@ -503,9 +474,7 @@ def visualizar_mapa_reponedor(
     if current_user.rol.nombre_rol.lower() != "reponedor":
         raise HTTPException(status_code=403, detail="Solo los reponedores pueden acceder a este recurso.")
 
-    from app.models.usuario_punto import UsuarioPunto
-
-    puntos_usuario = db.query(UsuarioPunto.id_punto).filter(UsuarioPunto.id_usuario == current_user.id_usuario).all()
+    puntos_usuario = db.query(PuntoReposicion.id_punto).filter(PuntoReposicion.id_usuario == current_user.id_usuario).all()
     puntos_ids_permitidos = set([p[0] for p in puntos_usuario])
 
     # Seleccionar el mapa

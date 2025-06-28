@@ -22,7 +22,6 @@ class ProductoOut(ProductoBase):
     id_producto: int
     class Config:
         from_attributes = True
-        orm_mode = True
 
 class ProductoUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=1, max_length=100)
