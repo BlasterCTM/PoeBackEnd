@@ -1,3 +1,46 @@
+
+from app.models.usuario import Usuario, RolEnum
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.core.database.database import get_db
+from app.api.dependencies.auth import get_current_user
+
+# Definir el router principal después de los imports
+router = APIRouter()
+
+@router.put("/detalles-tarea/{id_detalle}/completar", status_code=200)
+def completar_detalle_tarea(
+    id_detalle: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Buscar el detalle de tarea
+    detalle = db.query(DetalleTarea).filter(DetalleTarea.id_detalle == id_detalle).first()
+    if not detalle:
+        raise HTTPException(status_code=404, detail="Detalle de tarea no encontrado.")
+    # Buscar la tarea asociada
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == detalle.id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea asociada no encontrada.")
+    # Validar usuario reponedor asignado
+    if current_user.rol.nombre_rol.lower() != "reponedor" or int(tarea.id_reponedor) != int(current_user.id_usuario):
+        raise HTTPException(status_code=403, detail="Solo el reponedor asignado puede completar este detalle de tarea.")
+    # Buscar estado 'completada'
+    estado_completada = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.ilike("completada")).first()
+    if not estado_completada:
+        raise HTTPException(status_code=500, detail="No existe el estado 'completada' en la base de datos.")
+    # Validar estado actual
+    if detalle.estado_id == estado_completada.estado_id:
+        raise HTTPException(status_code=400, detail="El detalle de tarea ya fue completado previamente.")
+    # Actualizar estado
+    detalle.estado_id = estado_completada.estado_id
+    db.commit()
+    db.refresh(detalle)
+    return {
+        "mensaje": "Detalle de tarea marcado como completado exitosamente.",
+        "id_detalle": detalle.id_detalle,
+        "estado": "completada"
+    }
 # Endpoints para tareas y detalle de tarea
 
 from fastapi import APIRouter, Depends, HTTPException, Body, status, Path, Query
@@ -41,7 +84,6 @@ from app.models.objeto_tipo import ObjetoTipo
 import random
 import itertools
 
-router = APIRouter()
 supervision_repository = SupervisionRepository()
 
 def encontrar_punto_accesible(coordenada_mueble: tuple, coordenadas_caminables: set) -> tuple:
@@ -984,6 +1026,69 @@ def obtener_ruta_optimizada_tarea(
 
     # Calcular tiempo estimado (asumiendo 1 minuto por unidad de distancia + 2 minutos por punto)
     tiempo_estimado = distancia_total + (len(puntos_ordenados) * 2)
+
+    # --- GUARDADO DE RUTA OPTIMIZADA, DETALLES Y PASOS ---
+    from app.repositories.ruta_detallada import RutaDetalladaRepository
+    from app.schemas.ruta_detallada import RutaOptimizadaCreate, DetalleRutaCreate, PasoRutaCreate
+    from datetime import date
+
+    # Eliminar rutas previas para la tarea y reponedor (opcional: solo una por tarea-reponedor)
+    rutas_previas = RutaDetalladaRepository.obtener_rutas_por_tarea(db, tarea.id_tarea)
+    for r in rutas_previas:
+        if r.id_reponedor == reponedor.id_usuario:
+            RutaDetalladaRepository.eliminar_ruta(db, r.id_ruta)
+
+    # Preparar datos para guardar
+    ruta_data = RutaOptimizadaCreate(
+        id_reponedor=reponedor.id_usuario,
+        id_tarea=tarea.id_tarea,
+        fecha_generada=date.today(),
+        algoritmo_usado=nombre_algoritmo,
+        tiempo_estimado=tiempo_estimado,
+        distancia_total=distancia_total
+    )
+    detalles_data = []
+    pasos_data = []
+    secuencia_global = 0
+    for idx, punto in enumerate(orden_visita_puntos, start=1):
+        detalles_data.append(DetalleRutaCreate(
+            orden=idx,
+            id_punto=punto['id_punto'],
+            tiempo_estimado_punto=None,  # Se puede calcular si se desea
+            id_ruta=0  # Se ignora en el repo
+        ))
+    # Dividir la ruta completa en segmentos (tramos) entre cada par de puntos
+    # Cada segmento corresponde a un DetalleRuta
+    pasos_por_detalle = []
+    idx_coord = 0
+    for i in range(len(orden_visita_coords) - 1):
+        origen = orden_visita_coords[i]
+        destino = orden_visita_coords[i + 1]
+        # Buscar el segmento correspondiente en la ruta completa
+        segmento = []
+        while idx_coord < len(coordenadas_ruta_completa):
+            coord = coordenadas_ruta_completa[idx_coord]
+            segmento.append(coord)
+            if coord == destino:
+                idx_coord += 1
+                break
+            idx_coord += 1
+        pasos = []
+        for j, (x, y) in enumerate(segmento):
+            pasos.append(PasoRutaCreate(
+                secuencia=j + 1,
+                x=x,
+                y=y,
+                id_detalle_ruta=0  # Se ignora en el repo
+            ))
+        pasos_por_detalle.append(pasos)
+    # Guardar en la base de datos
+    ruta_guardada = RutaDetalladaRepository.crear_ruta_completa(
+        db,
+        ruta_data,
+        detalles_data,
+        pasos_por_detalle
+    )
 
     return RutaOptimizadaResponse(
         id_tarea=tarea.id_tarea,
