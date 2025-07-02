@@ -6,8 +6,9 @@ class UsuarioBase(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=100)
     correo: EmailStr
 
+
 class UsuarioCreate(UsuarioBase):
-    contraseña: constr(min_length=6)
+    contraseña: str = Field(..., min_length=6)
     rol: RolEnum
 
     @validator('rol')
