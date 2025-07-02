@@ -31,7 +31,9 @@ origins = [
     "http://localhost:4200",  # Para Angular
     "http://127.0.0.1:5500",  # Para VS Code Live Server
     "http://localhost:5173",  # Para Vite
-    "http://127.0.0.1:5173"   # Para Vite
+    "http://127.0.0.1:5173",
+    "http://localhost:8081",
+    "http://localhost:8080",  # Para FastAPI en desarrollo
 ]
 
 app.add_middleware(
