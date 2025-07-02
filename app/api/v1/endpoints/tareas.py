@@ -319,8 +319,84 @@ def crear_tarea(
         "asignada": tarea.id_reponedor is not None
     }
 
+
+# --- Modelo Pydantic para cambio de estado genérico ---
+class CambioEstadoRequest(BaseModel):
+    nuevo_estado: str
+
 class AsignarReponedorRequest(BaseModel):
     id_reponedor: int
+@router.put("/tareas/{id_tarea}/cambiar-estado", status_code=200)
+def cambiar_estado_tarea(
+    id_tarea: int = Path(..., description="ID de la tarea"),
+    body: CambioEstadoRequest = Body(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+
+    estado_actual = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first()
+    estado_nuevo = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == body.nuevo_estado).first()
+    if not estado_nuevo:
+        raise HTTPException(status_code=422, detail="El estado solicitado no existe.")
+
+    # Validación de transición de estado (puedes ajustar según tu lógica de negocio)
+    transiciones_validas = {
+        "sin asignar": ["pendiente", "cancelada"],
+        "pendiente": ["en progreso", "cancelada"],
+        "en progreso": ["completada", "cancelada"],
+        "completada": [],
+        "cancelada": []
+    }
+    if estado_nuevo.nombre_estado not in transiciones_validas.get(estado_actual.nombre_estado, []):
+        raise HTTPException(status_code=409, detail=f"No se puede cambiar de '{estado_actual.nombre_estado}' a '{estado_nuevo.nombre_estado}'.")
+
+    tarea.estado_id = estado_nuevo.estado_id
+    db.commit()
+    db.refresh(tarea)
+    return {
+        "mensaje": f"Estado de la tarea cambiado a '{estado_nuevo.nombre_estado}'.",
+        "id_tarea": tarea.id_tarea,
+        "nuevo_estado": estado_nuevo.nombre_estado
+    }
+
+
+@router.put("/detalle-tarea/{id_detalle}/cambiar-estado", status_code=200)
+def cambiar_estado_detalle_tarea(
+    id_detalle: int = Path(..., description="ID del detalle de tarea"),
+    body: CambioEstadoRequest = Body(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    detalle = db.query(DetalleTarea).filter(DetalleTarea.id_detalle == id_detalle).first()
+    if not detalle:
+        raise HTTPException(status_code=404, detail="Detalle de tarea no encontrado.")
+
+    estado_actual = db.query(EstadoTarea).filter(EstadoTarea.estado_id == detalle.estado_id).first()
+    estado_nuevo = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == body.nuevo_estado).first()
+    if not estado_nuevo:
+        raise HTTPException(status_code=422, detail="El estado solicitado no existe.")
+
+    # Validación de transición de estado (ajusta según tu lógica de negocio)
+    transiciones_validas = {
+        "pendiente": ["en progreso", "cancelada"],
+        "en progreso": ["completada", "cancelada"],
+        "completada": [],
+        "cancelada": []
+    }
+    if estado_nuevo.nombre_estado not in transiciones_validas.get(estado_actual.nombre_estado, []):
+        raise HTTPException(status_code=409, detail=f"No se puede cambiar de '{estado_actual.nombre_estado}' a '{estado_nuevo.nombre_estado}'.")
+
+    detalle.estado_id = estado_nuevo.estado_id
+    db.commit()
+    db.refresh(detalle)
+    return {
+        "mensaje": f"Estado del detalle de tarea cambiado a '{estado_nuevo.nombre_estado}'.",
+        "id_detalle": detalle.id_detalle,
+        "nuevo_estado": estado_nuevo.nombre_estado
+    }
 
 @router.put("/tareas/{id_tarea}/asignar-reponedor", status_code=200)
 def asignar_reponedor_a_tarea(
