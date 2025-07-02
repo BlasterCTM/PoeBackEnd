@@ -43,7 +43,7 @@ class TareaResponse(TareaBase):
     id_supervisor: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class TareaDetalleResponse(TareaResponse):
     """Esquema para respuesta de tarea con detalles"""
