@@ -16,6 +16,10 @@ def generar_grafo(db: Session, mapa_id: int) -> Set[Tuple[int, int]]:
         tipo = db.query(ObjetoTipo).filter(ObjetoTipo.id_tipo == objeto.id_tipo).first()
         if tipo and tipo.caminable:
             walkable.add((ubic.x, ubic.y))
+    print(f"[DEBUG] [generar_grafo] Nodos caminables generados: {len(walkable)}")
+    # Log de nodos específicos de interés
+    for coord in [(4,2), (17,7), (17,8)]:
+        print(f"[DEBUG] [generar_grafo] ¿Nodo {coord} está en caminables?: {coord in walkable}")
     return walkable
 
 def calcular_ruta(

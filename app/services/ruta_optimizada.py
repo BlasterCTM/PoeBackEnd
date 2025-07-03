@@ -193,7 +193,9 @@ def obtener_ruta_optimizada(
     mapa = db.query(Mapa).first()
     if not mapa:
         raise HTTPException(status_code=500, detail="No hay mapas configurados en el sistema")
+    print(f"[DEBUG] [obtener_ruta_optimizada] Llamando a generar_grafo para mapa {mapa.id_mapa}")
     coordenadas_caminables = generar_grafo(db, mapa.id_mapa)
+    print(f"[DEBUG] [obtener_ruta_optimizada] Total coordenadas caminables: {len(coordenadas_caminables)}")
     ubicaciones_muebles = db.query(UbicacionFisica).join(ObjetoMapa).join(ObjetoTipo).filter(ObjetoTipo.nombre_tipo == "mueble").all()
     muebles_coords = set((ubic.x, ubic.y) for ubic in ubicaciones_muebles)
     coordenadas_caminables -= muebles_coords
@@ -215,13 +217,17 @@ def obtener_ruta_optimizada(
         producto = db.query(Producto).filter(Producto.id_producto == detalle.id_producto).first()
         if not producto:
             continue
+        print(f"[DEBUG] [obtener_ruta_optimizada] Detalle {detalle.id_detalle}: punto={punto.id_punto}, mueble={mueble.id_mueble}, ubicaciones={[ (u.x, u.y) for u in ubicaciones ]}")
         coordenada_accesible = None
         for ubic in ubicaciones:
+            print(f"[DEBUG] [obtener_ruta_optimizada] Buscando punto accesible para mueble en ({ubic.x}, {ubic.y})")
             c = encontrar_punto_accesible_cruz((ubic.x, ubic.y), coordenadas_caminables)
+            print(f"[DEBUG] [obtener_ruta_optimizada] Punto accesible encontrado: {c}")
             if c != (0, 0):
                 coordenada_accesible = c
                 break
         if not coordenada_accesible:
+            print(f"[WARNING] [obtener_ruta_optimizada] No se encontró punto accesible para detalle {detalle.id_detalle}, usando (0,0)")
             coordenada_accesible = (0, 0)
         coordenadas_puntos.append(coordenada_accesible)
         coordenada_display = CoordenadaResponse(x=ubicaciones[0].x, y=ubicaciones[0].y)
@@ -255,20 +261,25 @@ def obtener_ruta_optimizada(
     if inicio not in coordenadas_caminables:
         inicio = encontrar_punto_accesible(inicio, coordenadas_caminables)
     algoritmo_func = algoritmos_disponibles[algoritmo]
+    print(f"[DEBUG] [obtener_ruta_optimizada] Origen inicial: {inicio}")
+    print(f"[DEBUG] [obtener_ruta_optimizada] Puntos a visitar (coordenadas): {[p['coordenadas'] for p in puntos_info]}")
     orden_visita_coords, orden_visita_puntos, nombre_algoritmo, descripcion_algoritmo = algoritmo_func(
         puntos_info, inicio, coordenadas_caminables
     )
+    print(f"[DEBUG] [obtener_ruta_optimizada] Orden de visita calculado: {orden_visita_coords}")
     coordenadas_ruta_completa = []
     ruta_valida = True
     for i in range(len(orden_visita_coords) - 1):
         origen = orden_visita_coords[i]
         destino = orden_visita_coords[i + 1]
+        print(f"[DEBUG] [obtener_ruta_optimizada] Calculando ruta de {origen} a {destino}")
         ruta_segmento = calcular_ruta(
             db,
             mapa.id_mapa,
             origen,
             destino
         )
+        print(f"[DEBUG] [obtener_ruta_optimizada] Ruta calculada: {ruta_segmento}")
         if ruta_segmento:
             ruta_segmento_filtrada = []
             for idx, coord in enumerate(ruta_segmento):
@@ -277,6 +288,7 @@ def obtener_ruta_optimizada(
                     break
                 ruta_segmento_filtrada.append(coord)
             if not ruta_valida:
+                print(f"[ERROR] [obtener_ruta_optimizada] Ruta inválida: pasa por mueble en {coord}")
                 break
             if i == 0:
                 coordenadas_ruta_completa.extend(ruta_segmento_filtrada)
@@ -284,6 +296,7 @@ def obtener_ruta_optimizada(
                 coordenadas_ruta_completa.extend(ruta_segmento_filtrada[1:])
             distancia_total += len(ruta_segmento_filtrada) - 1
         else:
+            print(f"[WARNING] [obtener_ruta_optimizada] No se pudo calcular ruta entre {origen} y {destino}")
             if i == 0:
                 coordenadas_ruta_completa.append(origen)
             x1, y1 = origen
@@ -302,6 +315,7 @@ def obtener_ruta_optimizada(
                         break
                     ruta_manual.append((x, y1))
             if not ruta_valida:
+                print(f"[ERROR] [obtener_ruta_optimizada] Ruta manual inválida: pasa por mueble")
                 break
             x_final = x2
             if y1 < y2:
@@ -317,9 +331,11 @@ def obtener_ruta_optimizada(
                         break
                     ruta_manual.append((x_final, y))
             if not ruta_valida:
+                print(f"[ERROR] [obtener_ruta_optimizada] Ruta manual inválida: pasa por mueble")
                 break
             coordenadas_ruta_completa.extend(ruta_manual)
             distancia_total += len(ruta_manual)
+    print(f"[DEBUG] [obtener_ruta_optimizada] Ruta global final: {coordenadas_ruta_completa}")
     if coordenadas_ruta_completa:
         while coordenadas_ruta_completa and coordenadas_ruta_completa[-1] in [(ubic.x, ubic.y) for ubic in ubicaciones_muebles]:
             coordenadas_ruta_completa.pop()

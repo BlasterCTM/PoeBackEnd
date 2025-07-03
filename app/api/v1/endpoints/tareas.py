@@ -94,24 +94,20 @@ def encontrar_punto_accesible(coordenada_mueble: tuple, coordenadas_caminables: 
     Prioriza las 8 casillas adyacentes directas al mueble.
     """
     x, y = coordenada_mueble
-    
+    print(f"[DEBUG] [encontrar_punto_accesible] Coordenada mueble recibida: {coordenada_mueble}")
     # VERIFICACIÓN: Si el mueble mismo es caminable, NO usarlo (es un error)
     if coordenada_mueble in coordenadas_caminables:
         print(f"WARNING: Mueble en {coordenada_mueble} está marcado como caminable, esto es incorrecto")
-        # No devolver la coordenada del mueble aunque esté en coordenadas_caminables
-    
     # Primero: buscar en las 8 casillas adyacentes directas (prioridad alta)
     direcciones_adyacentes = [
         (0, 1), (0, -1), (1, 0), (-1, 0),  # arriba, abajo, derecha, izquierda
         (1, 1), (1, -1), (-1, 1), (-1, -1)  # diagonales
     ]
-    
     for dx, dy in direcciones_adyacentes:
         punto_candidato = (x + dx, y + dy)
         if punto_candidato in coordenadas_caminables and punto_candidato != coordenada_mueble:
-            print(f"Punto accesible encontrado para mueble {coordenada_mueble}: {punto_candidato}")
+            print(f"[DEBUG] [encontrar_punto_accesible] Punto accesible encontrado para mueble {coordenada_mueble}: {punto_candidato}")
             return punto_candidato
-    
     # Segundo: si no hay casillas adyacentes caminables, buscar en círculos concéntricos
     for radio in range(2, 8):  # Buscar hasta 7 unidades de distancia
         for dx in range(-radio, radio + 1):
@@ -120,32 +116,34 @@ def encontrar_punto_accesible(coordenada_mueble: tuple, coordenadas_caminables: 
                 if abs(dx) == radio or abs(dy) == radio:
                     punto_candidato = (x + dx, y + dy)
                     if punto_candidato in coordenadas_caminables and punto_candidato != coordenada_mueble:
-                        print(f"Punto accesible encontrado (radio {radio}) para mueble {coordenada_mueble}: {punto_candidato}")
+                        print(f"[DEBUG] [encontrar_punto_accesible] Punto accesible encontrado (radio {radio}) para mueble {coordenada_mueble}: {punto_candidato}")
                         return punto_candidato
-    
-    # Si no encuentra ningún punto cercano, usar una coordenada por defecto (0,0) o la más cercana al origen
-    print(f"ERROR: No se encontró punto accesible para mueble {coordenada_mueble}, usando (0,0)")
-    return (0, 0)  # En lugar de devolver la coordenada del mueble
+    # Si no se encontró ningún punto accesible, lanzar excepción clara
+    error_msg = f"No hay ninguna casilla caminable adyacente al mueble en {coordenada_mueble}. Verifica el layout del mapa."
+    print(f"[ERROR] [encontrar_punto_accesible] {error_msg}")
+    raise ValueError(error_msg)
 
 def encontrar_punto_accesible_cruz(coordenada_mueble: tuple, coordenadas_caminables: set) -> tuple:
     """
     Busca SOLO en cruz (arriba, abajo, izquierda, derecha) el punto caminable más cercano al mueble.
     """
     x, y = coordenada_mueble
+    print(f"[DEBUG] [encontrar_punto_accesible_cruz] Coordenada mueble recibida: {coordenada_mueble}")
     direcciones_cruz = [
         (0, 1), (0, -1), (1, 0), (-1, 0)  # arriba, abajo, derecha, izquierda
     ]
     for dx, dy in direcciones_cruz:
         punto_candidato = (x + dx, y + dy)
         if punto_candidato in coordenadas_caminables:
+            print(f"[DEBUG] [encontrar_punto_accesible_cruz] Punto accesible encontrado para mueble {coordenada_mueble}: {punto_candidato}")
             return punto_candidato
-    # Si no hay adyacente en cruz, busca en círculos concéntricos solo en cruz
     for radio in range(2, 8):
         for dx, dy in direcciones_cruz:
             punto_candidato = (x + dx * radio, y + dy * radio)
             if punto_candidato in coordenadas_caminables:
+                print(f"[DEBUG] [encontrar_punto_accesible_cruz] Punto accesible encontrado (radio {radio}) para mueble {coordenada_mueble}: {punto_candidato}")
                 return punto_candidato
-    # Si no encuentra, retorna (0,0) o lanza error
+    print(f"[ERROR] [encontrar_punto_accesible_cruz] No se encontró punto accesible para mueble {coordenada_mueble}, usando (0,0)")
     return (0, 0)
 
 @router.post("/tareas/{id_tarea}/detalle")
@@ -817,41 +815,164 @@ def detalle_tarea_reponedor(
 
 
 
-@router.get("/tareas/{id_tarea}/ruta-optimizada", response_model=RutaOptimizadaResponse)
-def obtener_ruta_optimizada_tarea(
+
+@router.get("/tareas/{id_tarea}/ruta-optimizada", response_model=dict)
+def optimizar_rutas_por_detalle_tarea(
     id_tarea: int,
-    algoritmo: str = Query("vecino_mas_cercano", description="Algoritmo a utilizar: 'vecino_mas_cercano', 'fuerza_bruta', 'genetico'"),
+    algoritmo: str = Query("A*", description="Algoritmo a utilizar: 'A*', 'vecino_mas_cercano', etc."),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     """
-    Obtiene la ruta optimizada de reposición para una tarea específica usando el servicio externo.
+    Genera y almacena rutas optimizadas independientes para cada detalle_tarea de una tarea.
+    Devuelve un JSON con todas las rutas optimizadas por producto.
     """
-    return obtener_ruta_optimizada(
-        id_tarea=id_tarea,
-        algoritmo=algoritmo,
-        db=db,
-        current_user=current_user,
-        Tarea=Tarea,
-        UsuarioModel=UsuarioModel,
-        EstadoTarea=EstadoTarea,
-        DetalleTarea=DetalleTarea,
-        Mapa=Mapa,
-        UbicacionFisica=UbicacionFisica,
-        ObjetoMapa=ObjetoMapa,
-        ObjetoTipo=ObjetoTipo,
-        PuntoReposicion=PuntoReposicion,
-        MuebleReposicion=MuebleReposicion,
-        Producto=Producto,
-        generar_grafo=generar_grafo,
-        encontrar_punto_accesible_cruz=encontrar_punto_accesible_cruz,
-        encontrar_punto_accesible=encontrar_punto_accesible,
-        calcular_ruta=calcular_ruta,
-        CoordenadaResponse=CoordenadaResponse,
-        MuebleRutaResponse=MuebleRutaResponse,
-        ProductoRutaResponse=ProductoRutaResponse,
-        PuntoRutaResponse=PuntoRutaResponse,
-        AlgoritmoResponse=AlgoritmoResponse,
-        RutaOptimizadaResponse=RutaOptimizadaResponse,
-        RolEnum=RolEnum
-    )
+    # 1. Validar tarea y permisos
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+    if current_user.rol.nombre_rol == RolEnum.REPONEDOR.value and int(tarea.id_reponedor) != int(current_user.id_usuario):
+        raise HTTPException(status_code=403, detail="No tienes acceso a esta tarea.")
+
+    # 2. Obtener detalles de tarea
+    detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea).all()
+    if not detalles:
+        raise HTTPException(status_code=404, detail="No hay detalles de tarea para optimizar.")
+
+    # 3. Obtener info de reponedor
+    reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
+    nombre_reponedor = reponedor.nombre if reponedor else None
+
+    # 4. Preparar respuesta
+    respuesta = {
+        "id_tarea": tarea.id_tarea,
+        "reponedor": nombre_reponedor,
+        "detalle_tareas": []
+    }
+
+    # 5. Limpiar rutas previas (opcional, según política)
+    from sqlalchemy import text
+    ids_detalle = ','.join(str(d.id_detalle) for d in detalles)
+    if ids_detalle:
+        # El nombre correcto de la columna es id_detalle_tarea en detalle_ruta
+        db.execute(text(f"DELETE FROM paso_ruta WHERE id_detalle_ruta IN (SELECT id_detalle_ruta FROM detalle_ruta WHERE id_detalle_tarea IN ({ids_detalle}))"))
+        db.execute(text(f"DELETE FROM detalle_ruta WHERE id_detalle_tarea IN ({ids_detalle})"))
+        db.commit()
+
+
+    # 6. Procesar cada detalle_tarea usando el servicio real
+    from app.services.ruta_optimizada import obtener_ruta_optimizada
+    # Llamamos al servicio para obtener la ruta global optimizada (incluye todos los pasos)
+    try:
+        resultado = obtener_ruta_optimizada(
+            id_tarea,
+            algoritmo,
+            db,
+            current_user,
+            Tarea,
+            UsuarioModel,
+            EstadoTarea,
+            DetalleTarea,
+            Mapa,
+            UbicacionFisica,
+            ObjetoMapa,
+            ObjetoTipo,
+            PuntoReposicion,
+            MuebleReposicion,
+            Producto,
+            generar_grafo,
+            encontrar_punto_accesible_cruz,
+            encontrar_punto_accesible,
+            calcular_ruta,
+            CoordenadaResponse,
+            MuebleRutaResponse,
+            ProductoRutaResponse,
+            PuntoRutaResponse,
+            AlgoritmoResponse,
+            RutaOptimizadaResponse,
+            RolEnum
+        )
+    except ValueError as e:
+        # Error de punto accesible: mostrar como warning global y continuar con respuesta vacía
+        print(f"[ERROR] {str(e)}")
+        return {
+            "id_tarea": tarea.id_tarea,
+            "reponedor": nombre_reponedor,
+            "detalle_tareas": [],
+            "warning": str(e)
+        }
+    except HTTPException as e:
+        return {"error": e.detail}
+
+    # Adaptar la respuesta para que cada detalle_tarea tenga su propia ruta (segmento complementario)
+    # --- NUEVA LÓGICA DE SEGMENTACIÓN Y FORMATO DE RUTA OPTIMIZADA ---
+    pasos = resultado.coordenadas_ruta
+    puntos = resultado.puntos_reposicion
+    id_punto_a_id_detalle = {d.id_punto: d.id_detalle for d in detalles}
+    # --- Nueva lógica robusta: buscar el paso más cercano a la coordenada objetivo de cada mueble ---
+    def distancia(p1, p2):
+        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+
+    indices_objetivos = []
+    usados = set()
+    for punto in puntos:
+        objetivo = (punto.mueble.coordenadas.x, punto.mueble.coordenadas.y)
+        idx_cercano = None
+        min_dist = float('inf')
+        for idx, paso in enumerate(pasos):
+            if idx in usados:
+                continue
+            d = distancia((paso.x, paso.y), objetivo)
+            if d < min_dist:
+                min_dist = d
+                idx_cercano = idx
+                if d == 0:
+                    break
+        if idx_cercano is not None:
+            indices_objetivos.append(idx_cercano)
+            usados.add(idx_cercano)
+
+    detalle_tareas = []
+    inicio = 0
+    for i, idx_fin in enumerate(indices_objetivos):
+        segmento = pasos[inicio:idx_fin+1] if idx_fin >= inicio else []
+        # Generar la lista de pasos reales, consecutivos y caminables
+        ruta_optimizada = [
+            {"orden": j+1, "x": paso.x, "y": paso.y}
+            for j, paso in enumerate(segmento)
+        ]
+        # Calcular distancia real (número de pasos - 1)
+        distancia_total = float(len(ruta_optimizada) - 1) if len(ruta_optimizada) > 1 else 0.0
+        tiempo_estimado_segmento = len(ruta_optimizada) + 2 if len(ruta_optimizada) > 0 else 0
+        id_detalle = id_punto_a_id_detalle.get(puntos[i].id_punto, puntos[i].id_punto)
+
+        warning = None
+        if not segmento or len(ruta_optimizada) == 0:
+            causas = []
+            if not hasattr(puntos[i], "producto") or puntos[i].producto is None:
+                causas.append("No hay producto asociado al punto.")
+            if not hasattr(puntos[i], "mueble") or puntos[i].mueble is None:
+                causas.append("No hay mueble asociado al punto.")
+            elif not hasattr(puntos[i].mueble, "coordenadas") or puntos[i].mueble.coordenadas is None:
+                causas.append("No hay coordenadas para el mueble.")
+            if not causas:
+                causas.append("No se pudo calcular la ruta (posible grafo desconectado o sin camino posible).")
+            warning = "; ".join(causas)
+
+        detalle_tareas.append({
+            "id_detalle_tarea": id_detalle,
+            "producto": getattr(puntos[i].producto, "nombre", None),
+            "cantidad": getattr(puntos[i].producto, "cantidad", None),
+            "ruta_optimizada": ruta_optimizada,
+            "distancia_total": distancia_total,
+            "algoritmo_usado": getattr(resultado.algoritmo_utilizado, "nombre", None),
+            "warning": warning
+        })
+        inicio = idx_fin + 1
+
+    respuesta["detalle_tareas"] = detalle_tareas
+    respuesta["tiempo_estimado_total"] = getattr(resultado, "tiempo_estimado_minutos", None)
+    respuesta["coordenadas_ruta_global"] = [
+        {"x": c.x, "y": c.y} for c in getattr(resultado, "coordenadas_ruta", [])
+    ]
+    return respuesta
