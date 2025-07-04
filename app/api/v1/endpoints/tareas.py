@@ -904,73 +904,100 @@ def optimizar_rutas_por_detalle_tarea(
     except HTTPException as e:
         return {"error": e.detail}
 
-    # Adaptar la respuesta para que cada detalle_tarea tenga su propia ruta (segmento complementario)
-    # --- NUEVA LÓGICA DE SEGMENTACIÓN Y FORMATO DE RUTA OPTIMIZADA ---
-    pasos = resultado.coordenadas_ruta
-    puntos = resultado.puntos_reposicion
-    id_punto_a_id_detalle = {d.id_punto: d.id_detalle for d in detalles}
-    # --- Nueva lógica robusta: buscar el paso más cercano a la coordenada objetivo de cada mueble ---
+    # NUEVA LÓGICA: Agrupar por mueble_id
+    from collections import defaultdict
+    
+    muebles_grupos = defaultdict(list)
+    
+    # Agrupar detalle_tareas por mueble_id
+    for detalle in detalles:
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == detalle.id_punto).first()
+        if punto and punto.id_mueble:
+            muebles_grupos[punto.id_mueble].append({
+                'detalle': detalle,
+                'punto': punto
+            })
+    
+    # Generar rutas optimizadas por mueble
+    muebles_rutas = []
+    pasos_globales = resultado.coordenadas_ruta
+    ultimo_indice_global = 0
+    
     def distancia(p1, p2):
         return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+    
+    for mueble_id, grupo in muebles_grupos.items():
+        # Obtener información del mueble
+        mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == mueble_id).first()
+        objeto = None
+        ubicaciones = []
+        if mueble:
+            objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first()
+            if objeto:
+                ubicaciones = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).all()
+        
+        # Encontrar coordenadas de destino para este mueble
+        coordenadas_mueble = []
+        if ubicaciones:
+            for ubic in ubicaciones:
+                coordenadas_mueble.append((ubic.x, ubic.y))
+        
+        # Buscar el índice más cercano en la ruta global para este mueble
+        mejor_indice = -1
+        min_distancia = float('inf')
+        
+        for coord in coordenadas_mueble:
+            for idx, paso in enumerate(pasos_globales):
+                if idx < ultimo_indice_global:
+                    continue
+                distancia_calc = distancia((paso.x, paso.y), coord)
+                if distancia_calc < min_distancia:
+                    min_distancia = distancia_calc
+                    mejor_indice = idx
+                    if distancia_calc <= 1:  # Tolerancia de 1 casilla
+                        break
+        
+        if mejor_indice >= 0:
+            # Generar segmento desde último índice hasta este mueble
+            segmento_mueble = pasos_globales[ultimo_indice_global:mejor_indice+1]
+            
+            # Generar ruta optimizada para este mueble
+            ruta_optimizada_mueble = [
+                {"orden": j+1, "x": paso.x, "y": paso.y}
+                for j, paso in enumerate(segmento_mueble)
+            ]
+            
+            # Calcular distancia
+            distancia_total = len(ruta_optimizada_mueble) - 1 if len(ruta_optimizada_mueble) > 1 else 0
+            
+            # Preparar lista de detalle_tareas para este mueble
+            detalle_tareas_mueble = []
+            for item in grupo:
+                detalle = item['detalle']
+                punto = item['punto']
+                
+                # Obtener producto
+                producto = db.query(Producto).filter(Producto.id_producto == detalle.id_producto).first()
+                
+                detalle_tareas_mueble.append({
+                    "id_detalle_tarea": detalle.id_detalle,
+                    "producto": producto.nombre if producto else None,
+                    "cantidad": detalle.cantidad,
+                    "id_punto_reposicion": punto.id_punto
+                })
+            
+            muebles_rutas.append({
+                "id_mueble": mueble_id,
+                "nombre_mueble": objeto.nombre if objeto else f"Mueble {mueble_id}",
+                "detalle_tareas": detalle_tareas_mueble,
+                "ruta_optimizada_mueble": ruta_optimizada_mueble,
+                "distancia_total_mueble": float(distancia_total),
+                "algoritmo_usado": getattr(resultado.algoritmo_utilizado, "nombre", None)
+            })
+            
+            ultimo_indice_global = mejor_indice + 1
 
-    indices_objetivos = []
-    usados = set()
-    for punto in puntos:
-        objetivo = (punto.mueble.coordenadas.x, punto.mueble.coordenadas.y)
-        idx_cercano = None
-        min_dist = float('inf')
-        for idx, paso in enumerate(pasos):
-            if idx in usados:
-                continue
-            d = distancia((paso.x, paso.y), objetivo)
-            if d < min_dist:
-                min_dist = d
-                idx_cercano = idx
-                if d == 0:
-                    break
-        if idx_cercano is not None:
-            indices_objetivos.append(idx_cercano)
-            usados.add(idx_cercano)
-
-    detalle_tareas = []
-    inicio = 0
-    for i, idx_fin in enumerate(indices_objetivos):
-        segmento = pasos[inicio:idx_fin+1] if idx_fin >= inicio else []
-        # Generar la lista de pasos reales, consecutivos y caminables
-        ruta_optimizada = [
-            {"orden": j+1, "x": paso.x, "y": paso.y}
-            for j, paso in enumerate(segmento)
-        ]
-        # Calcular distancia real (número de pasos - 1)
-        distancia_total = float(len(ruta_optimizada) - 1) if len(ruta_optimizada) > 1 else 0.0
-        tiempo_estimado_segmento = len(ruta_optimizada) + 2 if len(ruta_optimizada) > 0 else 0
-        id_detalle = id_punto_a_id_detalle.get(puntos[i].id_punto, puntos[i].id_punto)
-
-        warning = None
-        if not segmento or len(ruta_optimizada) == 0:
-            causas = []
-            if not hasattr(puntos[i], "producto") or puntos[i].producto is None:
-                causas.append("No hay producto asociado al punto.")
-            if not hasattr(puntos[i], "mueble") or puntos[i].mueble is None:
-                causas.append("No hay mueble asociado al punto.")
-            elif not hasattr(puntos[i].mueble, "coordenadas") or puntos[i].mueble.coordenadas is None:
-                causas.append("No hay coordenadas para el mueble.")
-            if not causas:
-                causas.append("No se pudo calcular la ruta (posible grafo desconectado o sin camino posible).")
-            warning = "; ".join(causas)
-
-        detalle_tareas.append({
-            "id_detalle_tarea": id_detalle,
-            "producto": getattr(puntos[i].producto, "nombre", None),
-            "cantidad": getattr(puntos[i].producto, "cantidad", None),
-            "ruta_optimizada": ruta_optimizada,
-            "distancia_total": distancia_total,
-            "algoritmo_usado": getattr(resultado.algoritmo_utilizado, "nombre", None),
-            "warning": warning
-        })
-        inicio = idx_fin + 1
-
-    respuesta["detalle_tareas"] = detalle_tareas
+    respuesta["muebles_rutas"] = muebles_rutas
     respuesta["tiempo_estimado_total"] = getattr(resultado, "tiempo_estimado_minutos", None)
     respuesta["coordenadas_ruta_global"] = [
         {"x": c.x, "y": c.y} for c in getattr(resultado, "coordenadas_ruta", [])
