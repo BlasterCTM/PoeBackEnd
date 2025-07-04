@@ -904,124 +904,106 @@ def optimizar_rutas_por_detalle_tarea(
     except HTTPException as e:
         return {"error": e.detail}
 
-    # NUEVA LÓGICA: Agrupar por mueble_id
+    # ENFOQUE HÍBRIDO: Usar optimización global para el orden, rutas individuales para precisión
     from collections import defaultdict
     
-    muebles_grupos = defaultdict(list)
-    
-    print(f"[DEBUG] ===== INICIO AGRUPACIÓN POR MUEBLES =====")
+    print(f"[DEBUG] ===== INICIO ENFOQUE HÍBRIDO =====")
     print(f"[DEBUG] Total detalle_tareas a procesar: {len(detalles)}")
     
-    # Agrupar detalle_tareas por mueble_id
+    # Paso 1: Agrupar detalle_tareas por mueble_id
+    muebles_grupos = defaultdict(list)
+    
     for detalle in detalles:
-        # Obtener información del producto para debug
         producto = db.query(Producto).filter(Producto.id_producto == detalle.id_producto).first()
         producto_nombre = producto.nombre if producto else "Producto desconocido"
         
         print(f"[DEBUG] Procesando detalle {detalle.id_detalle} - Producto: {producto_nombre} - Punto: {detalle.id_punto}")
         
         punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == detalle.id_punto).first()
-        if punto:
-            print(f"[DEBUG] Punto {detalle.id_punto} encontrado - Mueble: {punto.id_mueble}")
-            if punto.id_mueble:
-                muebles_grupos[punto.id_mueble].append({
-                    'detalle': detalle,
-                    'punto': punto
-                })
-                print(f"[DEBUG] ✓ Detalle {detalle.id_detalle} ({producto_nombre}) asignado a mueble {punto.id_mueble}")
-            else:
-                print(f"[WARNING] ✗ Punto {detalle.id_punto} no tiene mueble asignado (id_mueble es NULL)")
+        if punto and punto.id_mueble:
+            muebles_grupos[punto.id_mueble].append({
+                'detalle': detalle,
+                'punto': punto
+            })
+            print(f"[DEBUG] ✓ Detalle {detalle.id_detalle} ({producto_nombre}) asignado a mueble {punto.id_mueble}")
         else:
-            print(f"[WARNING] ✗ Punto {detalle.id_punto} no encontrado en base de datos")
+            print(f"[WARNING] ✗ Punto {detalle.id_punto} no tiene mueble asignado o punto no encontrado")
     
-    print(f"[DEBUG] ===== RESULTADO AGRUPACIÓN =====")
     print(f"[DEBUG] Total muebles encontrados: {len(muebles_grupos)}")
     print(f"[DEBUG] Muebles IDs: {list(muebles_grupos.keys())}")
-    for mueble_id, items in muebles_grupos.items():
-        productos_en_mueble = []
-        for item in items:
-            prod = db.query(Producto).filter(Producto.id_producto == item['detalle'].id_producto).first()
-            productos_en_mueble.append(prod.nombre if prod else "Desconocido")
-        print(f"[DEBUG] Mueble {mueble_id}: {len(items)} productos: {productos_en_mueble}")
-    print(f"[DEBUG] =====================================")
     
-    
-    # Generar rutas optimizadas por mueble - NUEVA LÓGICA MEJORADA
+    # Paso 2: Extraer orden óptimo de muebles desde la ruta global
     pasos_globales = resultado.coordenadas_ruta
     
-    def distancia(p1, p2):
+    def distancia_manhattan(p1, p2):
         return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
     
-    # Paso 1: Encontrar el mejor índice para cada mueble en la ruta global
-    muebles_indices = []
+    # Mapear cada mueble a su posición en la ruta global
+    muebles_orden = []
     
     for mueble_id, grupo in muebles_grupos.items():
-        print(f"[DEBUG] Analizando posición del mueble {mueble_id} en ruta global")
-        
-        # Obtener información del mueble
+        # Obtener información y coordenadas del mueble
         mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == mueble_id).first()
         objeto = None
-        ubicaciones = []
+        coordenadas_mueble = []
+        
         if mueble:
             objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first()
             if objeto:
                 ubicaciones = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).all()
+                for ubic in ubicaciones:
+                    coordenadas_mueble.append((ubic.x, ubic.y))
         
-        # Encontrar coordenadas de destino para este mueble
-        coordenadas_mueble = []
-        if ubicaciones:
-            for ubic in ubicaciones:
-                coordenadas_mueble.append((ubic.x, ubic.y))
-        
-        # Buscar el índice más cercano en la ruta global para este mueble
-        mejor_indice = -1
+        # Encontrar el punto más cercano en la ruta global
+        mejor_posicion = -1
         min_distancia = float('inf')
         
         if coordenadas_mueble:
-            for coord in coordenadas_mueble:
+            for coord_mueble in coordenadas_mueble:
                 for idx, paso in enumerate(pasos_globales):
-                    distancia_calc = distancia((paso.x, paso.y), coord)
-                    if distancia_calc < min_distancia:
-                        min_distancia = distancia_calc
-                        mejor_indice = idx
-                        if distancia_calc <= 1:  # Tolerancia de 1 casilla
+                    dist = distancia_manhattan((paso.x, paso.y), coord_mueble)
+                    if dist < min_distancia:
+                        min_distancia = dist
+                        mejor_posicion = idx
+                        if dist <= 1:  # Encontrado punto adyacente
                             break
-            print(f"[DEBUG] Mueble {mueble_id}: mejor_indice={mejor_indice}, min_distancia={min_distancia}")
         
-        muebles_indices.append({
+        muebles_orden.append({
             'mueble_id': mueble_id,
             'grupo': grupo,
             'objeto': objeto,
-            'mejor_indice': mejor_indice,
-            'min_distancia': min_distancia
+            'coordenadas': coordenadas_mueble,
+            'posicion_global': mejor_posicion,
+            'distancia_min': min_distancia
         })
+        
+        print(f"[DEBUG] Mueble {mueble_id}: posición en ruta global = {mejor_posicion}, distancia = {min_distancia}")
     
-    # Paso 2: Ordenar muebles por su índice en la ruta global
-    print(f"[DEBUG] Ordenando muebles por índice en ruta global")
-    muebles_indices_ordenados = sorted(muebles_indices, key=lambda x: x['mejor_indice'] if x['mejor_indice'] >= 0 else float('inf'))
+    # Paso 3: Ordenar muebles según su aparición en la ruta global
+    muebles_orden_sorted = sorted(muebles_orden, key=lambda x: x['posicion_global'] if x['posicion_global'] >= 0 else float('inf'))
     
-    for i, m in enumerate(muebles_indices_ordenados):
-        print(f"[DEBUG] Orden {i+1}: Mueble {m['mueble_id']} en índice {m['mejor_indice']}")
+    print(f"[DEBUG] Orden final de muebles:")
+    for i, m in enumerate(muebles_orden_sorted):
+        print(f"[DEBUG] {i+1}. Mueble {m['mueble_id']} (posición: {m['posicion_global']})")
     
-    # Paso 3: Asignar segmentos de ruta a cada mueble ordenadamente
+    # Paso 4: Generar rutas individuales siguiendo el orden optimizado
     muebles_rutas = []
-    ultimo_indice_global = 0
+    posicion_actual = (0, 0)  # Punto de inicio
+    ruta_global_completa = []
     
-    for i, mueble_info in enumerate(muebles_indices_ordenados):
+    for i, mueble_info in enumerate(muebles_orden_sorted):
         mueble_id = mueble_info['mueble_id']
         grupo = mueble_info['grupo']
         objeto = mueble_info['objeto']
-        mejor_indice = mueble_info['mejor_indice']
+        coordenadas_mueble = mueble_info['coordenadas']
         
-        print(f"[DEBUG] Procesando mueble {mueble_id} (orden {i+1}) con mejor_indice={mejor_indice}")
+        print(f"[DEBUG] ===== GENERANDO RUTA INDIVIDUAL PARA MUEBLE {mueble_id} =====")
         
         # Preparar lista de detalle_tareas para este mueble
         detalle_tareas_mueble = []
         for item in grupo:
             detalle = item['detalle']
             punto = item['punto']
-            
-            # Obtener producto
             producto = db.query(Producto).filter(Producto.id_producto == detalle.id_producto).first()
             
             detalle_tareas_mueble.append({
@@ -1031,68 +1013,105 @@ def optimizar_rutas_por_detalle_tarea(
                 "id_punto_reposicion": punto.id_punto
             })
         
-        # Generar ruta para este mueble
-        if mejor_indice >= 0 and mejor_indice >= ultimo_indice_global:
-            # Generar segmento desde último índice hasta este mueble
-            segmento_mueble = pasos_globales[ultimo_indice_global:mejor_indice+1]
-            
-            # Generar ruta optimizada para este mueble
-            ruta_optimizada_mueble = [
-                {"orden": j+1, "x": paso.x, "y": paso.y}
-                for j, paso in enumerate(segmento_mueble)
-            ]
-            
-            # Calcular distancia
-            distancia_total = len(ruta_optimizada_mueble) - 1 if len(ruta_optimizada_mueble) > 1 else 0
-            
-            ultimo_indice_global = mejor_indice + 1
-            print(f"[DEBUG] Mueble {mueble_id}: asignado segmento [{ultimo_indice_global-len(segmento_mueble)}:{ultimo_indice_global}] con {len(ruta_optimizada_mueble)} pasos")
+        # Generar ruta individual hacia este mueble
+        ruta_mueble_individual = []
+        distancia_total = 0
         
-        elif mejor_indice < 0:
-            # Si no se puede encontrar el mueble en la ruta, usar ruta restante o vacía
-            if ultimo_indice_global < len(pasos_globales):
-                segmento_restante = pasos_globales[ultimo_indice_global:]
-                ruta_optimizada_mueble = [
-                    {"orden": j+1, "x": paso.x, "y": paso.y}
-                    for j, paso in enumerate(segmento_restante)
-                ]
-                distancia_total = len(ruta_optimizada_mueble) - 1 if len(ruta_optimizada_mueble) > 1 else 0
-                ultimo_indice_global = len(pasos_globales)
-                print(f"[DEBUG] Mueble {mueble_id}: sin coordenadas, asignada ruta restante con {len(ruta_optimizada_mueble)} pasos")
-            else:
-                # Ruta vacía como fallback
-                ruta_optimizada_mueble = []
+        if coordenadas_mueble:
+            # Encontrar coordenada de acceso al mueble (punto caminable más cercano)
+            try:
+                # Obtener coordenadas caminables del grafo
+                grafo = generar_grafo(db)
+                coordenadas_caminables = set(grafo.keys())
+                
+                # Encontrar mejor punto de acceso al mueble
+                mejor_acceso = None
+                min_dist_acceso = float('inf')
+                
+                for coord_mueble in coordenadas_mueble:
+                    try:
+                        punto_acceso = encontrar_punto_accesible_cruz(coord_mueble, coordenadas_caminables)
+                        dist_desde_actual = distancia_manhattan(posicion_actual, punto_acceso)
+                        if dist_desde_actual < min_dist_acceso:
+                            min_dist_acceso = dist_desde_actual
+                            mejor_acceso = punto_acceso
+                    except ValueError:
+                        print(f"[WARNING] No se pudo encontrar acceso para coordenada {coord_mueble} del mueble {mueble_id}")
+                        continue
+                
+                if mejor_acceso:
+                    # Calcular ruta desde posición actual hasta el mueble
+                    try:
+                        ruta_hacia_mueble = calcular_ruta(db, posicion_actual, mejor_acceso)
+                        
+                        # Convertir a formato de respuesta
+                        for j, (x, y) in enumerate(ruta_hacia_mueble):
+                            ruta_mueble_individual.append({
+                                "orden": j + 1,
+                                "x": x,
+                                "y": y
+                            })
+                        
+                        distancia_total = len(ruta_hacia_mueble) - 1 if len(ruta_hacia_mueble) > 1 else 0
+                        
+                        # Actualizar posición actual para el siguiente mueble
+                        posicion_actual = mejor_acceso
+                        
+                        # Agregar a ruta global completa
+                        ruta_global_completa.extend(ruta_hacia_mueble)
+                        
+                        print(f"[DEBUG] Ruta generada para mueble {mueble_id}: {len(ruta_mueble_individual)} pasos, distancia: {distancia_total}")
+                        
+                    except Exception as e:
+                        print(f"[ERROR] Error calculando ruta hacia mueble {mueble_id}: {str(e)}")
+                        ruta_mueble_individual = []
+                        distancia_total = 0
+                else:
+                    print(f"[WARNING] No se pudo encontrar punto de acceso para mueble {mueble_id}")
+                    ruta_mueble_individual = []
+                    distancia_total = 0
+                    
+            except Exception as e:
+                print(f"[ERROR] Error generando grafo o acceso para mueble {mueble_id}: {str(e)}")
+                ruta_mueble_individual = []
                 distancia_total = 0
-                print(f"[DEBUG] Mueble {mueble_id}: sin coordenadas y sin ruta restante, ruta vacía")
-        
         else:
-            # El mueble está antes del último índice procesado (problema de orden)
-            print(f"[WARNING] Mueble {mueble_id} tiene índice {mejor_indice} que es menor al último procesado {ultimo_indice_global}")
-            ruta_optimizada_mueble = []
+            print(f"[WARNING] Mueble {mueble_id} no tiene coordenadas definidas")
+            ruta_mueble_individual = []
             distancia_total = 0
         
-        # SIEMPRE agregar el mueble a la respuesta
+        # SIEMPRE agregar el mueble a la respuesta (incluso si la ruta falló)
         muebles_rutas.append({
             "id_mueble": mueble_id,
             "nombre_mueble": objeto.nombre if objeto else f"Mueble {mueble_id}",
             "detalle_tareas": detalle_tareas_mueble,
-            "ruta_optimizada_mueble": ruta_optimizada_mueble,
+            "ruta_optimizada_mueble": ruta_mueble_individual,
             "distancia_total_mueble": float(distancia_total),
             "algoritmo_usado": getattr(resultado.algoritmo_utilizado, "nombre", None)
         })
         
-        print(f"[DEBUG] ✓ Mueble {mueble_id} ({objeto.nombre if objeto else f'Mueble {mueble_id}'}) agregado con {len(detalle_tareas_mueble)} detalle_tareas y ruta de {len(ruta_optimizada_mueble)} pasos")
-        print(f"[DEBUG] Productos en mueble {mueble_id}: {[dt['producto'] for dt in detalle_tareas_mueble]}")
-
+        print(f"[DEBUG] ✓ Mueble {mueble_id} agregado con {len(detalle_tareas_mueble)} productos y ruta de {len(ruta_mueble_individual)} pasos")
+    
     print(f"[DEBUG] ===== RESULTADO FINAL =====")
     print(f"[DEBUG] Total muebles en respuesta: {len(muebles_rutas)}")
     for i, mueble in enumerate(muebles_rutas):
-        print(f"[DEBUG] Mueble {i+1}: ID={mueble['id_mueble']}, Nombre={mueble['nombre_mueble']}, Productos={len(mueble['detalle_tareas'])}")
+        print(f"[DEBUG] Mueble {i+1}: ID={mueble['id_mueble']}, Productos={len(mueble['detalle_tareas'])}, Pasos={len(mueble['ruta_optimizada_mueble'])}")
     print(f"[DEBUG] ===============================")
 
     respuesta["muebles_rutas"] = muebles_rutas
     respuesta["tiempo_estimado_total"] = getattr(resultado, "tiempo_estimado_minutos", None)
-    respuesta["coordenadas_ruta_global"] = [
-        {"x": c.x, "y": c.y} for c in getattr(resultado, "coordenadas_ruta", [])
-    ]
+    
+    # Usar la ruta global completa generada por el enfoque híbrido si está disponible
+    if ruta_global_completa:
+        respuesta["coordenadas_ruta_global"] = [
+            {"x": x, "y": y} for x, y in ruta_global_completa
+        ]
+        print(f"[DEBUG] Usando ruta global híbrida con {len(ruta_global_completa)} pasos")
+    else:
+        # Fallback a la ruta global original del servicio
+        respuesta["coordenadas_ruta_global"] = [
+            {"x": c.x, "y": c.y} for c in getattr(resultado, "coordenadas_ruta", [])
+        ]
+        print(f"[DEBUG] Usando ruta global original del servicio")
+    
     return respuesta
