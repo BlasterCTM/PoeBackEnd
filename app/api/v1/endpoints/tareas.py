@@ -946,16 +946,17 @@ def optimizar_rutas_por_detalle_tarea(
     print(f"[DEBUG] =====================================")
     
     
-    # Generar rutas optimizadas por mueble
-    muebles_rutas = []
+    # Generar rutas optimizadas por mueble - NUEVA LÓGICA MEJORADA
     pasos_globales = resultado.coordenadas_ruta
-    ultimo_indice_global = 0
     
     def distancia(p1, p2):
         return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
     
+    # Paso 1: Encontrar el mejor índice para cada mueble en la ruta global
+    muebles_indices = []
+    
     for mueble_id, grupo in muebles_grupos.items():
-        print(f"[DEBUG] Procesando mueble {mueble_id} con {len(grupo)} detalle_tareas")
+        print(f"[DEBUG] Analizando posición del mueble {mueble_id} en ruta global")
         
         # Obtener información del mueble
         mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == mueble_id).first()
@@ -965,13 +966,56 @@ def optimizar_rutas_por_detalle_tarea(
             objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first()
             if objeto:
                 ubicaciones = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).all()
-                print(f"[DEBUG] Mueble {mueble_id} tiene {len(ubicaciones)} ubicaciones físicas")
-            else:
-                print(f"[WARNING] Mueble {mueble_id} no tiene objeto_mapa asociado")
-        else:
-            print(f"[WARNING] Mueble {mueble_id} no encontrado en mueble_reposicion")
         
-        # Preparar lista de detalle_tareas para este mueble (SIEMPRE incluir)
+        # Encontrar coordenadas de destino para este mueble
+        coordenadas_mueble = []
+        if ubicaciones:
+            for ubic in ubicaciones:
+                coordenadas_mueble.append((ubic.x, ubic.y))
+        
+        # Buscar el índice más cercano en la ruta global para este mueble
+        mejor_indice = -1
+        min_distancia = float('inf')
+        
+        if coordenadas_mueble:
+            for coord in coordenadas_mueble:
+                for idx, paso in enumerate(pasos_globales):
+                    distancia_calc = distancia((paso.x, paso.y), coord)
+                    if distancia_calc < min_distancia:
+                        min_distancia = distancia_calc
+                        mejor_indice = idx
+                        if distancia_calc <= 1:  # Tolerancia de 1 casilla
+                            break
+            print(f"[DEBUG] Mueble {mueble_id}: mejor_indice={mejor_indice}, min_distancia={min_distancia}")
+        
+        muebles_indices.append({
+            'mueble_id': mueble_id,
+            'grupo': grupo,
+            'objeto': objeto,
+            'mejor_indice': mejor_indice,
+            'min_distancia': min_distancia
+        })
+    
+    # Paso 2: Ordenar muebles por su índice en la ruta global
+    print(f"[DEBUG] Ordenando muebles por índice en ruta global")
+    muebles_indices_ordenados = sorted(muebles_indices, key=lambda x: x['mejor_indice'] if x['mejor_indice'] >= 0 else float('inf'))
+    
+    for i, m in enumerate(muebles_indices_ordenados):
+        print(f"[DEBUG] Orden {i+1}: Mueble {m['mueble_id']} en índice {m['mejor_indice']}")
+    
+    # Paso 3: Asignar segmentos de ruta a cada mueble ordenadamente
+    muebles_rutas = []
+    ultimo_indice_global = 0
+    
+    for i, mueble_info in enumerate(muebles_indices_ordenados):
+        mueble_id = mueble_info['mueble_id']
+        grupo = mueble_info['grupo']
+        objeto = mueble_info['objeto']
+        mejor_indice = mueble_info['mejor_indice']
+        
+        print(f"[DEBUG] Procesando mueble {mueble_id} (orden {i+1}) con mejor_indice={mejor_indice}")
+        
+        # Preparar lista de detalle_tareas para este mueble
         detalle_tareas_mueble = []
         for item in grupo:
             detalle = item['detalle']
@@ -987,36 +1031,8 @@ def optimizar_rutas_por_detalle_tarea(
                 "id_punto_reposicion": punto.id_punto
             })
         
-        # Encontrar coordenadas de destino para este mueble
-        coordenadas_mueble = []
-        if ubicaciones:
-            for ubic in ubicaciones:
-                coordenadas_mueble.append((ubic.x, ubic.y))
-            print(f"[DEBUG] Mueble {mueble_id} coordenadas: {coordenadas_mueble}")
-        else:
-            print(f"[WARNING] Mueble {mueble_id} no tiene ubicaciones físicas")
-        
-        # Buscar el índice más cercano en la ruta global para este mueble
-        mejor_indice = -1
-        min_distancia = float('inf')
-        
-        if coordenadas_mueble:
-            for coord in coordenadas_mueble:
-                for idx, paso in enumerate(pasos_globales):
-                    if idx < ultimo_indice_global:
-                        continue
-                    distancia_calc = distancia((paso.x, paso.y), coord)
-                    if distancia_calc < min_distancia:
-                        min_distancia = distancia_calc
-                        mejor_indice = idx
-                        if distancia_calc <= 1:  # Tolerancia de 1 casilla
-                            break
-            print(f"[DEBUG] Mueble {mueble_id}: mejor_indice={mejor_indice}, min_distancia={min_distancia}, ultimo_indice_global={ultimo_indice_global}")
-        else:
-            print(f"[WARNING] Mueble {mueble_id} no tiene coordenadas, usando ruta restante")
-        
-        # Generar ruta para este mueble (con fallback si no se encuentra)
-        if mejor_indice >= 0:
+        # Generar ruta para este mueble
+        if mejor_indice >= 0 and mejor_indice >= ultimo_indice_global:
             # Generar segmento desde último índice hasta este mueble
             segmento_mueble = pasos_globales[ultimo_indice_global:mejor_indice+1]
             
@@ -1030,7 +1046,9 @@ def optimizar_rutas_por_detalle_tarea(
             distancia_total = len(ruta_optimizada_mueble) - 1 if len(ruta_optimizada_mueble) > 1 else 0
             
             ultimo_indice_global = mejor_indice + 1
-        else:
+            print(f"[DEBUG] Mueble {mueble_id}: asignado segmento [{ultimo_indice_global-len(segmento_mueble)}:{ultimo_indice_global}] con {len(ruta_optimizada_mueble)} pasos")
+        
+        elif mejor_indice < 0:
             # Si no se puede encontrar el mueble en la ruta, usar ruta restante o vacía
             if ultimo_indice_global < len(pasos_globales):
                 segmento_restante = pasos_globales[ultimo_indice_global:]
@@ -1040,10 +1058,18 @@ def optimizar_rutas_por_detalle_tarea(
                 ]
                 distancia_total = len(ruta_optimizada_mueble) - 1 if len(ruta_optimizada_mueble) > 1 else 0
                 ultimo_indice_global = len(pasos_globales)
+                print(f"[DEBUG] Mueble {mueble_id}: sin coordenadas, asignada ruta restante con {len(ruta_optimizada_mueble)} pasos")
             else:
                 # Ruta vacía como fallback
                 ruta_optimizada_mueble = []
                 distancia_total = 0
+                print(f"[DEBUG] Mueble {mueble_id}: sin coordenadas y sin ruta restante, ruta vacía")
+        
+        else:
+            # El mueble está antes del último índice procesado (problema de orden)
+            print(f"[WARNING] Mueble {mueble_id} tiene índice {mejor_indice} que es menor al último procesado {ultimo_indice_global}")
+            ruta_optimizada_mueble = []
+            distancia_total = 0
         
         # SIEMPRE agregar el mueble a la respuesta
         muebles_rutas.append({
