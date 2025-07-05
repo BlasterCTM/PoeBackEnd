@@ -190,7 +190,12 @@ def obtener_ruta_optimizada(
     detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea).all()
     if not detalles:
         raise HTTPException(status_code=400, detail="La tarea no tiene productos asignados")
-    mapa = db.query(Mapa).first()
+    
+    # Buscar mapa activo primero, fallback al primer mapa disponible
+    mapa = db.query(Mapa).filter(Mapa.activo == True).first()
+    if not mapa:
+        print("[WARNING] No hay mapa activo definido, usando el primer mapa disponible")
+        mapa = db.query(Mapa).first()
     if not mapa:
         raise HTTPException(status_code=500, detail="No hay mapas configurados en el sistema")
     print(f"[DEBUG] [obtener_ruta_optimizada] Llamando a generar_grafo para mapa {mapa.id_mapa}")

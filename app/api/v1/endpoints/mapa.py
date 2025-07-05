@@ -533,3 +533,68 @@ def visualizar_mapa_reponedor(
         "mapa": MapaOut(id=mapa.id_mapa, nombre=mapa.nombre, ancho=mapa.ancho, alto=mapa.alto),
         "ubicaciones": ubicaciones
     }
+
+@router.put("/mapa/{id_mapa}/activar", status_code=200)
+def activar_mapa(
+    id_mapa: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Activa un mapa específico y desactiva todos los demás.
+    Solo puede haber un mapa activo a la vez.
+    """
+    if not current_user or current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
+        raise HTTPException(status_code=403, detail="Solo administradores pueden activar mapas.")
+    
+    # Verificar que el mapa existe
+    mapa = db.query(Mapa).filter(Mapa.id_mapa == id_mapa).first()
+    if not mapa:
+        raise HTTPException(status_code=404, detail="Mapa no encontrado.")
+    
+    # Desactivar todos los mapas
+    db.query(Mapa).update({Mapa.activo: False})
+    
+    # Activar el mapa seleccionado
+    mapa.activo = True
+    db.commit()
+    db.refresh(mapa)
+    
+    return {
+        "mensaje": f"Mapa '{mapa.nombre}' activado exitosamente.",
+        "mapa": {
+            "id_mapa": mapa.id_mapa,
+            "nombre": mapa.nombre,
+            "activo": mapa.activo
+        }
+    }
+
+@router.get("/mapa/activo", status_code=200)
+def obtener_mapa_activo(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Obtiene el mapa actualmente activo.
+    """
+    if not current_user or current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
+        raise HTTPException(status_code=403, detail="Solo administradores pueden consultar el mapa activo.")
+    
+    mapa_activo = db.query(Mapa).filter(Mapa.activo == True).first()
+    
+    if not mapa_activo:
+        return {
+            "mensaje": "No hay mapa activo configurado.",
+            "mapa": None
+        }
+    
+    return {
+        "mensaje": "Mapa activo encontrado.",
+        "mapa": {
+            "id_mapa": mapa_activo.id_mapa,
+            "nombre": mapa_activo.nombre,
+            "ancho": mapa_activo.ancho,
+            "alto": mapa_activo.alto,
+            "activo": mapa_activo.activo
+        }
+    }
