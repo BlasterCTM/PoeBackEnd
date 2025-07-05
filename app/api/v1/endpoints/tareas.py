@@ -1197,3 +1197,96 @@ def optimizar_rutas_por_detalle_tarea(
         print(f"[DEBUG] Usando ruta global original del servicio")
     
     return respuesta
+
+@router.put("/tareas/{id_tarea}/iniciar", status_code=200)
+def iniciar_tarea(
+    id_tarea: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Inicia una tarea cambiando su estado de 'pendiente' a 'en_progreso'"""
+    # Buscar tarea
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+    
+    # Validar usuario reponedor asignado
+    if current_user.rol.nombre_rol.lower() != "reponedor" or int(tarea.id_reponedor) != int(current_user.id_usuario):
+        raise HTTPException(status_code=403, detail="Solo el reponedor asignado puede iniciar esta tarea.")
+    
+    # Buscar estados
+    estado_pendiente = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.ilike("pendiente")).first()
+    estado_en_progreso = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.ilike("en_progreso")).first()
+    
+    if not estado_pendiente or not estado_en_progreso:
+        raise HTTPException(status_code=500, detail="Estados de tarea no configurados correctamente.")
+    
+    # Validar estado actual (debe estar pendiente)
+    if tarea.estado_id != estado_pendiente.estado_id:
+        estado_actual = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first()
+        estado_nombre = estado_actual.nombre_estado if estado_actual else "desconocido"
+        raise HTTPException(
+            status_code=400, 
+            detail=f"La tarea debe estar en estado 'pendiente' para poder iniciarla. Estado actual: {estado_nombre}"
+        )
+    
+    # Actualizar estado a en_progreso
+    tarea.estado_id = estado_en_progreso.estado_id
+    db.commit()
+    db.refresh(tarea)
+    
+    return {
+        "mensaje": "Tarea iniciada exitosamente.",
+        "estado": "en_progreso",
+        "id_tarea": tarea.id_tarea
+    }
+
+@router.put("/tareas/{id_tarea}/reiniciar", status_code=200)
+def reiniciar_tarea(
+    id_tarea: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Reinicia una tarea completada cambiando su estado de vuelta a 'pendiente' para facilitar pruebas"""
+    # Buscar tarea
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    if not tarea:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+    
+    # Validar permisos: solo el reponedor asignado, supervisor o administrador
+    if current_user.rol.nombre_rol.lower() == "reponedor":
+        if int(tarea.id_reponedor) != int(current_user.id_usuario):
+            raise HTTPException(status_code=403, detail="Solo el reponedor asignado puede reiniciar esta tarea.")
+    elif current_user.rol.nombre_rol.lower() == "supervisor":
+        if tarea.id_supervisor != current_user.id_usuario:
+            raise HTTPException(status_code=403, detail="Solo el supervisor asignado puede reiniciar esta tarea.")
+    elif current_user.rol.nombre_rol.lower() != "administrador":
+        raise HTTPException(status_code=403, detail="No tienes permisos para reiniciar tareas.")
+    
+    # Buscar estados
+    estado_completada = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.ilike("completada")).first()
+    estado_pendiente = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.ilike("pendiente")).first()
+    
+    if not estado_completada or not estado_pendiente:
+        raise HTTPException(status_code=500, detail="Estados de tarea no configurados correctamente.")
+    
+    # Validar estado actual (debe estar completada)
+    if tarea.estado_id != estado_completada.estado_id:
+        estado_actual = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first()
+        estado_nombre = estado_actual.nombre_estado if estado_actual else "desconocido"
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Solo se pueden reiniciar tareas completadas. Estado actual: {estado_nombre}"
+        )
+    
+    # Actualizar estado a pendiente y limpiar fecha de completado
+    tarea.estado_id = estado_pendiente.estado_id
+    tarea.fecha_hora_completada = None
+    db.commit()
+    db.refresh(tarea)
+    
+    return {
+        "mensaje": "Tarea reiniciada exitosamente. La tarea está ahora en estado pendiente.",
+        "estado": "pendiente",
+        "id_tarea": tarea.id_tarea
+    }
