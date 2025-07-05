@@ -601,6 +601,436 @@ class ReportesService:
         
         return reponedores
     
+    def obtener_productos_mas_repuestos(
+        self,
+        fecha_inicio: date,
+        fecha_fin: date,
+        limit: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Obtiene los productos más repuestos en un rango de fechas.
+        
+        Args:
+            fecha_inicio: Fecha de inicio del filtro
+            fecha_fin: Fecha de fin del filtro
+            limit: Límite de productos a retornar
+            
+        Returns:
+            Dict con los productos más repuestos y estadísticas
+        """
+        # Validar fechas
+        if fecha_inicio > fecha_fin:
+            raise HTTPException(
+                status_code=400,
+                detail="La fecha de inicio no puede ser mayor que la fecha de fin."
+            )
+        
+        # Query para obtener productos más repuestos
+        productos_query = (
+            self.db.query(
+                Producto.id_producto,
+                Producto.nombre,
+                Producto.categoria,
+                func.sum(DetalleTarea.cantidad).label('cantidad_total_repuesta'),
+                func.count(DetalleTarea.id_detalle).label('numero_reposiciones')
+            )
+            .join(DetalleTarea, DetalleTarea.id_producto == Producto.id_producto)
+            .join(Tarea, Tarea.id_tarea == DetalleTarea.id_tarea)
+            .filter(
+                and_(
+                    Tarea.fecha_creacion >= fecha_inicio,
+                    Tarea.fecha_creacion <= fecha_fin
+                )
+            )
+            .group_by(Producto.id_producto, Producto.nombre, Producto.categoria)
+            .order_by(func.sum(DetalleTarea.cantidad).desc())
+            .limit(limit)
+        )
+        
+        productos_data = productos_query.all()
+        
+        # Procesar resultados
+        productos = []
+        total_productos_repuestos = 0
+        total_cantidad_general = 0
+        
+        for producto in productos_data:
+            producto_info = {
+                "id_producto": producto.id_producto,
+                "nombre": producto.nombre,
+                "categoria": producto.categoria,
+                "cantidad_total_repuesta": int(producto.cantidad_total_repuesta),
+                "numero_reposiciones": int(producto.numero_reposiciones)
+            }
+            productos.append(producto_info)
+            total_productos_repuestos += 1
+            total_cantidad_general += int(producto.cantidad_total_repuesta)
+        
+        # Estadísticas adicionales
+        estadisticas = {
+            "total_productos_repuestos": total_productos_repuestos,
+            "cantidad_total_general": total_cantidad_general,
+            "promedio_cantidad_por_producto": round(
+                total_cantidad_general / total_productos_repuestos, 2
+            ) if total_productos_repuestos > 0 else 0,
+            "promedio_reposiciones_por_producto": round(
+                sum(p["numero_reposiciones"] for p in productos) / total_productos_repuestos, 2
+            ) if total_productos_repuestos > 0 else 0
+        }
+        
+        # Análisis por categorías
+        categorias_stats = {}
+        for producto in productos:
+            categoria = producto["categoria"]
+            if categoria not in categorias_stats:
+                categorias_stats[categoria] = {
+                    "productos_count": 0,
+                    "cantidad_total": 0,
+                    "reposiciones_total": 0
+                }
+            
+            categorias_stats[categoria]["productos_count"] += 1
+            categorias_stats[categoria]["cantidad_total"] += producto["cantidad_total_repuesta"]
+            categorias_stats[categoria]["reposiciones_total"] += producto["numero_reposiciones"]
+        
+        return {
+            "filtros": {
+                "fecha_inicio": fecha_inicio.isoformat(),
+                "fecha_fin": fecha_fin.isoformat(),
+                "limite_productos": limit
+            },
+            "estadisticas": estadisticas,
+            "analisis_por_categorias": categorias_stats,
+            "productos": productos,
+            "metadatos": {
+                "generado_el": datetime.now().isoformat(),
+                "total_registros": len(productos)
+            }
+        }
+
+    def generar_reporte_productos_excel(
+        self,
+        fecha_inicio: date,
+        fecha_fin: date,
+        limit: int = 100
+    ) -> Tuple[io.BytesIO, str]:
+        """
+        Genera un reporte en formato Excel de productos más repuestos.
+        
+        Returns:
+            Tuple con el archivo BytesIO y el nombre del archivo
+        """
+        # Obtener datos
+        datos = self.obtener_productos_mas_repuestos(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            limit=limit
+        )
+        
+        # Crear archivo Excel en memoria
+        buffer = io.BytesIO()
+        
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            # Hoja principal - Productos más repuestos
+            df_productos = pd.DataFrame(datos["productos"])
+            df_productos.to_excel(writer, sheet_name='Productos Más Repuestos', index=False)
+            
+            # Hoja de estadísticas generales
+            stats_data = []
+            for key, value in datos["estadisticas"].items():
+                stats_data.append({
+                    "Métrica": key.replace("_", " ").title(),
+                    "Valor": value
+                })
+            df_stats = pd.DataFrame(stats_data)
+            df_stats.to_excel(writer, sheet_name='Estadísticas', index=False)
+            
+            # Hoja de análisis por categorías
+            categorias_data = []
+            for categoria, stats in datos["analisis_por_categorias"].items():
+                categorias_data.append({
+                    "Categoría": categoria,
+                    "Productos": stats["productos_count"],
+                    "Cantidad Total": stats["cantidad_total"],
+                    "Reposiciones Total": stats["reposiciones_total"],
+                    "Promedio Cantidad/Producto": round(stats["cantidad_total"] / stats["productos_count"], 2) if stats["productos_count"] > 0 else 0
+                })
+            df_categorias = pd.DataFrame(categorias_data)
+            df_categorias.to_excel(writer, sheet_name='Análisis por Categorías', index=False)
+            
+            # Hoja de metadatos del reporte
+            metadata = []
+            metadata.append({"Campo": "Fecha Inicio", "Valor": datos["filtros"]["fecha_inicio"]})
+            metadata.append({"Campo": "Fecha Fin", "Valor": datos["filtros"]["fecha_fin"]})
+            metadata.append({"Campo": "Límite Productos", "Valor": datos["filtros"]["limite_productos"]})
+            metadata.append({"Campo": "Fecha Generación", "Valor": datos["metadatos"]["generado_el"]})
+            metadata.append({"Campo": "Total Registros", "Valor": datos["metadatos"]["total_registros"]})
+            
+            df_metadata = pd.DataFrame(metadata)
+            df_metadata.to_excel(writer, sheet_name='Información del Reporte', index=False)
+            
+            # Aplicar estilos mejorados
+            self._aplicar_estilos_productos_excel(writer, datos)
+        
+        buffer.seek(0)
+        
+        # Generar nombre del archivo
+        fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fecha_inicio_str = fecha_inicio.strftime("%Y%m%d")
+        fecha_fin_str = fecha_fin.strftime("%Y%m%d")
+        nombre_archivo = f"productos_mas_repuestos_{fecha_inicio_str}_{fecha_fin_str}_{fecha_actual}.xlsx"
+        
+        return buffer, nombre_archivo
+
+    def generar_reporte_productos_pdf(
+        self,
+        fecha_inicio: date,
+        fecha_fin: date,
+        limit: int = 100
+    ) -> Tuple[io.BytesIO, str]:
+        """
+        Genera un reporte en formato PDF de productos más repuestos.
+        
+        Returns:
+            Tuple con el archivo BytesIO y el nombre del archivo
+        """
+        # Obtener datos
+        datos = self.obtener_productos_mas_repuestos(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            limit=limit
+        )
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=50, bottomMargin=50)
+        story = []
+        
+        # Estilos
+        styles = getSampleStyleSheet()
+        
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            spaceAfter=30,
+            alignment=1,  # Centrado
+            textColor=colors.HexColor('#1f4e79'),
+            fontName='Helvetica-Bold'
+        )
+        
+        subtitle_style = ParagraphStyle(
+            'CustomSubtitle',
+            parent=styles['Heading2'],
+            fontSize=16,
+            spaceAfter=20,
+            alignment=1,
+            textColor=colors.HexColor('#1f4e79'),
+            fontName='Helvetica-Bold'
+        )
+        
+        section_style = ParagraphStyle(
+            'SectionStyle',
+            parent=styles['Heading2'],
+            fontSize=14,
+            spaceAfter=15,
+            spaceBefore=20,
+            textColor=colors.HexColor('#1f4e79'),
+            fontName='Helvetica-Bold',
+            borderWidth=2,
+            borderColor=colors.HexColor('#d5e3f0'),
+            borderPadding=5,
+            backColor=colors.HexColor('#f8f9fa')
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=10,
+            fontName='Helvetica'
+        )
+        
+        # === ENCABEZADO DEL DOCUMENTO ===
+        story.append(Paragraph("POE - PATH OPTIMIZATION ENGINE", title_style))
+        story.append(Paragraph("Reporte de Productos Más Repuestos", subtitle_style))
+        story.append(Spacer(1, 20))
+        
+        # Línea separadora
+        from reportlab.platypus import HRFlowable
+        story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1f4e79')))
+        story.append(Spacer(1, 20))
+        
+        # === INFORMACIÓN DEL REPORTE ===
+        story.append(Paragraph("📋 INFORMACIÓN DEL REPORTE", section_style))
+        
+        info_data = [
+            ["Parámetro", "Valor"],
+            ["📅 Fecha de Inicio", datos["filtros"]["fecha_inicio"]],
+            ["📅 Fecha de Fin", datos["filtros"]["fecha_fin"]],
+            ["🔢 Límite de Productos", str(datos["filtros"]["limite_productos"])],
+            ["📊 Total de Registros", str(datos["metadatos"]["total_registros"])],
+            ["⏰ Fecha de Generación", datetime.now().strftime("%d/%m/%Y %H:%M")]
+        ]
+        
+        info_table = Table(info_data, colWidths=[4*cm, 12*cm])
+        info_table.setStyle(TableStyle([
+            # Encabezado
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 12),
+            
+            # Datos
+            ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#d5e3f0')),
+            ('BACKGROUND', (1, 1), (1, -1), colors.white),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 1), (1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#1f4e79')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ]))
+        
+        story.append(info_table)
+        story.append(Spacer(1, 25))
+        
+        # === ESTADÍSTICAS GENERALES ===
+        story.append(Paragraph("📊 ESTADÍSTICAS GENERALES", section_style))
+        
+        stats = datos["estadisticas"]
+        stats_data = [
+            ["Métrica", "Valor"],
+            ["📦 Total Productos Repuestos", str(stats["total_productos_repuestos"])],
+            ["📈 Cantidad Total General", str(stats["cantidad_total_general"])],
+            ["📊 Promedio Cantidad/Producto", f"{stats['promedio_cantidad_por_producto']:.2f}"],
+            ["🔄 Promedio Reposiciones/Producto", f"{stats['promedio_reposiciones_por_producto']:.2f}"]
+        ]
+        
+        stats_table = Table(stats_data, colWidths=[8*cm, 8*cm])
+        stats_table.setStyle(TableStyle([
+            # Encabezado
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#70ad47')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 12),
+            
+            # Datos
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f8f0')),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#70ad47')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ]))
+        
+        story.append(stats_table)
+        story.append(Spacer(1, 25))
+        
+        # === TOP PRODUCTOS MÁS REPUESTOS ===
+        if datos["productos"]:
+            story.append(Paragraph("🏆 TOP PRODUCTOS MÁS REPUESTOS", section_style))
+            
+            # Limitar a los primeros 20 productos para que quepan en PDF
+            productos_mostrar = datos["productos"][:20]
+            
+            if len(datos["productos"]) > 20:
+                story.append(Paragraph(
+                    f"<b>Nota:</b> Se muestran los top {len(productos_mostrar)} productos de {len(datos['productos'])} totales.",
+                    normal_style
+                ))
+                story.append(Spacer(1, 10))
+            
+            # Preparar datos de la tabla
+            productos_data = [["Rank", "Producto", "Categoría", "Cantidad", "Reposiciones"]]
+            
+            for i, producto in enumerate(productos_mostrar, 1):
+                productos_data.append([
+                    str(i),
+                    producto["nombre"][:25] + "..." if len(producto["nombre"]) > 25 else producto["nombre"],
+                    producto["categoria"],
+                    str(producto["cantidad_total_repuesta"]),
+                    str(producto["numero_reposiciones"])
+                ])
+            
+            productos_table = Table(productos_data, colWidths=[1.5*cm, 6*cm, 3*cm, 2.5*cm, 3*cm])
+            productos_table.setStyle(TableStyle([
+                # Encabezado
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f79646')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                
+                # Datos
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#f79646')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                ('TOPPADDING', (0, 1), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                
+                # Alternar colores de filas
+                ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#fff8f0')),
+                ('BACKGROUND', (0, 3), (-1, 3), colors.HexColor('#fff8f0')),
+                ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor('#fff8f0')),
+            ]))
+            
+            # Resaltar top 3
+            for i in range(1, min(4, len(productos_mostrar) + 1)):
+                productos_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, i), (-1, i), colors.HexColor('#ffd700' if i == 1 else '#c0c0c0' if i == 2 else '#cd7f32')),
+                    ('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold')
+                ]))
+            
+            story.append(productos_table)
+        
+        story.append(Spacer(1, 30))
+        
+        # === PIE DE PÁGINA ===
+        footer_style = ParagraphStyle(
+            'Footer',
+            parent=styles['Normal'],
+            fontSize=8,
+            alignment=1,
+            textColor=colors.grey
+        )
+        
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.grey))
+        story.append(Spacer(1, 10))
+        story.append(Paragraph(
+            f"Reporte generado automáticamente por POE - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
+            footer_style
+        ))
+        story.append(Paragraph("© 2025 Path Optimization Engine - Sistema de Gestión de Inventario", footer_style))
+        
+        # Construir el PDF
+        doc.build(story)
+        buffer.seek(0)
+        
+        # Generar nombre del archivo
+        fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fecha_inicio_str = fecha_inicio.strftime("%Y%m%d")
+        fecha_fin_str = fecha_fin.strftime("%Y%m%d")
+        nombre_archivo = f"productos_mas_repuestos_{fecha_inicio_str}_{fecha_fin_str}_{fecha_actual}.pdf"
+        
+        return buffer, nombre_archivo
+
     def _obtener_nombre_estado(self, estado_id: int) -> Optional[str]:
         """
         Obtiene el nombre del estado por su ID.
@@ -676,8 +1106,8 @@ class ReportesService:
         
         fill_titulo = PatternFill(start_color=azul_principal, end_color=azul_principal, fill_type="solid")
         fill_encabezado = PatternFill(start_color=azul_claro, end_color=azul_claro, fill_type="solid")
-        fill_datos_par = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
-        fill_datos_impar = PatternFill(start_color=gris_claro, end_color=gris_claro, fill_type="solid")
+        fill_datos_par = PatternFill(start_color="FFFFFF", endColor="FFFFFF", fill_type="solid")
+        fill_datos_impar = PatternFill(start_color=gris_claro, endColor=gris_claro, fill_type="solid")
         
         border_fino = Border(
             left=Side(style='thin'), right=Side(style='thin'),
@@ -862,3 +1292,177 @@ class ReportesService:
             return "🟠 Regular"
         else:
             return "🔴 Necesita Mejorar"
+    
+    def _aplicar_estilos_productos_excel(self, writer, datos):
+        """Aplica estilos específicos para el reporte de productos más repuestos."""
+        from openpyxl.styles import Font, Fill, Border, Side, Alignment, PatternFill
+        from openpyxl.chart import BarChart, Reference
+        
+        # Colores corporativos
+        azul_principal = "1f4e79"
+        azul_claro = "d5e3f0"
+        verde_exito = "70ad47"
+        naranja_advertencia = "f79646"
+        rojo_error = "c55a5a"
+        gris_claro = "f2f2f2"
+        
+        # Estilos base
+        font_titulo = Font(name='Calibri', size=16, bold=True, color="FFFFFF")
+        font_subtitulo = Font(name='Calibri', size=12, bold=True, color=azul_principal)
+        font_encabezado = Font(name='Calibri', size=11, bold=True, color="FFFFFF")
+        font_normal = Font(name='Calibri', size=10)
+        font_resaltado = Font(name='Calibri', size=10, bold=True)
+        
+        fill_titulo = PatternFill(start_color=azul_principal, end_color=azul_principal, fill_type="solid")
+        fill_encabezado = PatternFill(start_color=azul_claro, end_color=azul_claro, fill_type="solid")
+        fill_datos_par = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        fill_datos_impar = PatternFill(start_color=gris_claro, end_color=gris_claro, fill_type="solid")
+        
+        border_fino = Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')
+        )
+        border_grueso = Border(
+            left=Side(style='medium'), right=Side(style='medium'),
+            top=Side(style='medium'), bottom=Side(style='medium')
+        )
+        
+        alignment_centro = Alignment(horizontal='center', vertical='center')
+        alignment_izquierda = Alignment(horizontal='left', vertical='center')
+        
+        # === HOJA DE PRODUCTOS ===
+        ws_productos = writer.sheets['Productos Más Repuestos']
+        
+        # Título principal
+        ws_productos.insert_rows(1, 3)
+        ws_productos['A1'] = "REPORTE DE PRODUCTOS MÁS REPUESTOS - POE"
+        ws_productos['A1'].font = Font(name='Calibri', size=18, bold=True, color=azul_principal)
+        ws_productos['A1'].alignment = alignment_centro
+        ws_productos.merge_cells('A1:E1')
+        
+        ws_productos['A2'] = f"Período: {datos['filtros']['fecha_inicio']} al {datos['filtros']['fecha_fin']}"
+        ws_productos['A2'].font = font_subtitulo
+        ws_productos['A2'].alignment = alignment_centro
+        ws_productos.merge_cells('A2:E2')
+        
+        ws_productos['A3'] = f"Generado el: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        ws_productos['A3'].font = font_normal
+        ws_productos['A3'].alignment = alignment_centro
+        ws_productos.merge_cells('A3:E3')
+        
+        # Formatear tabla de productos
+        for row in range(4, ws_productos.max_row + 1):
+            for col in range(1, ws_productos.max_column + 1):
+                cell = ws_productos.cell(row=row, column=col)
+                if row == 4:  # Encabezados
+                    cell.font = font_encabezado
+                    cell.fill = fill_titulo
+                    cell.alignment = alignment_centro
+                    cell.border = border_grueso
+                else:
+                    cell.font = font_normal
+                    cell.alignment = alignment_centro if col in [1, 4, 5] else alignment_izquierda
+                    cell.fill = fill_datos_par if row % 2 == 0 else fill_datos_impar
+                    cell.border = border_fino
+        
+        # Ajustar ancho de columnas
+        ws_productos.column_dimensions['A'].width = 12
+        ws_productos.column_dimensions['B'].width = 40
+        ws_productos.column_dimensions['C'].width = 15
+        ws_productos.column_dimensions['D'].width = 20
+        ws_productos.column_dimensions['E'].width = 18
+        
+        # === HOJA DE ESTADÍSTICAS ===
+        ws_stats = writer.sheets['Estadísticas']
+        
+        # Título
+        ws_stats.insert_rows(1, 2)
+        ws_stats['A1'] = "ESTADÍSTICAS GENERALES"
+        ws_stats['A1'].font = font_titulo
+        ws_stats['A1'].fill = fill_titulo
+        ws_stats['A1'].alignment = alignment_centro
+        ws_stats.merge_cells('A1:B1')
+        
+        # Formatear estadísticas
+        for row in range(3, ws_stats.max_row + 1):
+            for col in range(1, ws_stats.max_column + 1):
+                cell = ws_stats.cell(row=row, column=col)
+                if row == 3:  # Encabezados
+                    cell.font = font_encabezado
+                    cell.fill = fill_titulo
+                    cell.alignment = alignment_centro
+                    cell.border = border_grueso
+                else:
+                    if col == 1:
+                        cell.font = font_resaltado
+                        cell.fill = fill_encabezado
+                        cell.alignment = alignment_izquierda
+                    else:
+                        cell.font = font_normal
+                        cell.fill = fill_datos_par
+                        cell.alignment = alignment_centro
+                    cell.border = border_fino
+                cell = ws_stats.cell(row=row, column=col)
+                if row == 3:  # Encabezados
+                    cell.font = font_encabezado
+                    cell.fill = fill_titulo
+                    cell.alignment = alignment_centro
+                    cell.border = border_grueso
+                else:
+                    if col == 1:
+                        cell.font = font_resaltado
+                        cell.fill = fill_encabezado
+                        cell.alignment = alignment_izquierda
+                    else:
+                        cell.font = font_normal
+                        cell.fill = fill_datos_par
+                        cell.alignment = alignment_centro
+                    cell.border = border_fino
+        
+        # Ajustar ancho de columnas
+        ws_stats.column_dimensions['A'].width = 30
+        ws_stats.column_dimensions['B'].width = 20
+        
+        # === HOJA DE CATEGORÍAS ===
+        ws_categorias = writer.sheets['Análisis por Categorías']
+        
+        # Título
+        ws_categorias.insert_rows(1, 2)
+        ws_categorias['A1'] = "ANÁLISIS POR CATEGORÍAS"
+        ws_categorias['A1'].font = font_titulo
+        ws_categorias['A1'].fill = fill_titulo
+        ws_categorias['A1'].alignment = alignment_centro
+        ws_categorias.merge_cells('A1:D1')
+        
+        # Formatear tabla de categorías
+        for row in range(3, ws_categorias.max_row + 1):
+            for col in range(1, ws_categorias.max_column + 1):
+                cell = ws_categorias.cell(row=row, column=col)
+                if row == 3:  # Encabezados
+                    cell.font = font_encabezado
+                    cell.fill = fill_titulo
+                    cell.alignment = alignment_centro
+                    cell.border = border_grueso
+                else:
+                    cell.font = font_normal
+                    cell.alignment = alignment_centro if col > 1 else alignment_izquierda
+                    cell.fill = fill_datos_par if row % 2 == 0 else fill_datos_impar
+                    cell.border = border_fino
+            for col in range(1, ws_categorias.max_column + 1):
+                cell = ws_categorias.cell(row=row, column=col)
+                if row == 3:  # Encabezados
+                    cell.font = font_encabezado
+                    cell.fill = fill_titulo
+                    cell.alignment = alignment_centro
+                    cell.border = border_grueso
+                else:
+                    cell.font = font_normal
+                    cell.alignment = alignment_centro if col > 1 else alignment_izquierda
+                    cell.fill = fill_datos_par if row % 2 == 0 else fill_datos_impar
+                    cell.border = border_fino
+        
+        # Ajustar ancho de columnas
+        ws_categorias.column_dimensions['A'].width = 20
+        ws_categorias.column_dimensions['B'].width = 18
+        ws_categorias.column_dimensions['C'].width = 18
+        ws_categorias.column_dimensions['D'].width = 18

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import date
 import io
+from pydantic import BaseModel
 
 from app.api.dependencies.database import get_database
 from app.core.security.auth import get_current_user
@@ -343,6 +344,225 @@ async def obtener_estadisticas_generales(
                 reponedor.nombre: reponedor.count for reponedor in reponedores_resultado
             }
         }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
+
+# === MODELOS DE REQUEST ===
+
+class ProductosReportRequest(BaseModel):
+    """Modelo para el request del reporte de productos más repuestos."""
+    fecha_inicio: date
+    fecha_fin: date
+    limit: Optional[int] = 100
+    
+    class Config:
+        json_encoders = {
+            date: lambda v: v.isoformat()
+        }
+
+
+# === ENDPOINTS DE PRODUCTOS MÁS REPUESTOS ===
+
+@router.post("/productos-repuestos")
+async def obtener_productos_mas_repuestos(
+    request: ProductosReportRequest,
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(validar_acceso_admin)
+):
+    """
+    Obtiene los productos más repuestos en formato JSON.
+    
+    **Acceso:** Solo administradores
+    
+    **Parámetros del request body:**
+    - `fecha_inicio`: Fecha de inicio del rango (YYYY-MM-DD)
+    - `fecha_fin`: Fecha de fin del rango (YYYY-MM-DD)
+    - `limit`: Límite de productos a incluir (opcional, default: 100)
+    
+    **Respuesta:**
+    - Datos JSON con productos más repuestos y estadísticas
+    - Incluye análisis por categorías y metadatos del reporte
+    """
+    try:
+        servicio = ReportesService(db)
+        
+        # Validar fechas
+        if request.fecha_inicio > request.fecha_fin:
+            raise HTTPException(
+                status_code=400,
+                detail="La fecha de inicio no puede ser mayor que la fecha de fin."
+            )
+        
+        # Validar límite de productos
+        if request.limit is not None and (request.limit < 1 or request.limit > 1000):
+            raise HTTPException(
+                status_code=400,
+                detail="El límite de productos debe estar entre 1 y 1000."
+            )
+        
+        limite = request.limit or 100
+        
+        resultado = servicio.obtener_productos_mas_repuestos(
+            fecha_inicio=request.fecha_inicio,
+            fecha_fin=request.fecha_fin,
+            limit=limite
+        )
+        
+        return resultado
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
+
+@router.post("/productos-repuestos/descargar")
+async def descargar_reporte_productos_repuestos(
+    request: ProductosReportRequest,
+    formato: str = Query(..., description="Formato del reporte: 'excel' o 'pdf'"),
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(validar_acceso_admin)
+):
+    """
+    Descarga un reporte de productos más repuestos.
+    
+    **Acceso:** Solo administradores
+    
+    **Parámetros del request body:**
+    - `fecha_inicio`: Fecha de inicio del rango (YYYY-MM-DD)
+    - `fecha_fin`: Fecha de fin del rango (YYYY-MM-DD)
+    - `limit`: Límite de productos a incluir (opcional, default: 100)
+    
+    **Query Parameters:**
+    - `formato`: Formato del reporte ("excel" o "pdf")
+    
+    **Respuesta:**
+    - Archivo Excel (.xlsx) o PDF según el formato solicitado
+    - Contiene productos ordenados por cantidad total repuesta
+    - Incluye estadísticas y análisis por categorías
+    """
+    try:
+        servicio = ReportesService(db)
+        
+        # Validar formato
+        if formato not in ["excel", "pdf"]:
+            raise HTTPException(
+                status_code=400,
+                detail="El formato debe ser 'excel' o 'pdf'."
+            )
+        
+        # Validar fechas
+        if request.fecha_inicio > request.fecha_fin:
+            raise HTTPException(
+                status_code=400,
+                detail="La fecha de inicio no puede ser mayor que la fecha de fin."
+            )
+        
+        # Validar límite de productos
+        if request.limit is not None and (request.limit < 1 or request.limit > 1000):
+            raise HTTPException(
+                status_code=400,
+                detail="El límite de productos debe estar entre 1 y 1000."
+            )
+        
+        limite = request.limit or 100
+        
+        # Generar reporte según el formato
+        if formato == "excel":
+            archivo, nombre_archivo = servicio.generar_reporte_productos_excel(
+                fecha_inicio=request.fecha_inicio,
+                fecha_fin=request.fecha_fin,
+                limit=limite
+            )
+            
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            
+        else:  # formato == "pdf"
+            archivo, nombre_archivo = servicio.generar_reporte_productos_pdf(
+                fecha_inicio=request.fecha_inicio,
+                fecha_fin=request.fecha_fin,
+                limit=limite
+            )
+            
+            media_type = "application/pdf"
+        
+        # Preparar respuesta con el archivo
+        archivo.seek(0)
+        content = archivo.read()
+        
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename={nombre_archivo}"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
+
+@router.get("/productos-repuestos/preview")
+async def obtener_preview_productos_repuestos(
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(validar_acceso_admin),
+    fecha_inicio: date = Query(..., description="Fecha de inicio del rango (YYYY-MM-DD)"),
+    fecha_fin: date = Query(..., description="Fecha de fin del rango (YYYY-MM-DD)"),
+    limite: int = Query(20, description="Límite de productos a mostrar", le=100)
+):
+    """
+    Obtiene un preview de los productos más repuestos sin generar archivo.
+    
+    **Acceso:** Solo administradores
+    
+    **Parámetros:**
+    - `fecha_inicio`: Fecha de inicio del rango (YYYY-MM-DD)
+    - `fecha_fin`: Fecha de fin del rango (YYYY-MM-DD)
+    - `limite`: Límite de productos a mostrar (máximo 100)
+    
+    **Respuesta:**
+    - Datos JSON con productos más repuestos y estadísticas
+    - Útil para validar datos antes de generar el reporte completo
+    """
+    try:
+        servicio = ReportesService(db)
+        
+        # Validar fechas
+        if fecha_inicio > fecha_fin:
+            raise HTTPException(
+                status_code=400,
+                detail="La fecha de inicio no puede ser mayor que la fecha de fin."
+            )
+        
+        # Validar límite
+        if limite < 1 or limite > 100:
+            raise HTTPException(
+                status_code=400,
+                detail="El límite debe estar entre 1 y 100 para el preview."
+            )
+        
+        resultado = servicio.obtener_productos_mas_repuestos(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            limit=limite
+        )
+        
+        return resultado
         
     except HTTPException:
         raise
