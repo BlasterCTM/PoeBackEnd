@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Boolean
 from app.core.database.database import Base
 
 class Mapa(Base):
@@ -7,3 +7,4 @@ class Mapa(Base):
     nombre = Column(String(100), nullable=False)
     ancho = Column(Integer, nullable=False)
     alto = Column(Integer, nullable=False)
+    activo = Column(Boolean, default=False)

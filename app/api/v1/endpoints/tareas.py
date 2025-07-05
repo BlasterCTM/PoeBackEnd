@@ -68,6 +68,7 @@ from datetime import date, datetime
 from pydantic import BaseModel
 from app.repositories.supervision import SupervisionRepository
 import logging
+import traceback
 from pytz import timezone
 from fastapi import Query
 from typing import Optional
@@ -129,22 +130,46 @@ def encontrar_punto_accesible_cruz(coordenada_mueble: tuple, coordenadas_caminab
     """
     x, y = coordenada_mueble
     print(f"[DEBUG] [encontrar_punto_accesible_cruz] Coordenada mueble recibida: {coordenada_mueble}")
+    print(f"[DEBUG] [encontrar_punto_accesible_cruz] Total coordenadas caminables: {len(coordenadas_caminables)}")
+    
     direcciones_cruz = [
         (0, 1), (0, -1), (1, 0), (-1, 0)  # arriba, abajo, derecha, izquierda
     ]
+    
+    # Buscar en radio 1 primero
     for dx, dy in direcciones_cruz:
         punto_candidato = (x + dx, y + dy)
+        print(f"[DEBUG] [encontrar_punto_accesible_cruz] Probando punto candidato: {punto_candidato}")
         if punto_candidato in coordenadas_caminables:
-            print(f"[DEBUG] [encontrar_punto_accesible_cruz] Punto accesible encontrado para mueble {coordenada_mueble}: {punto_candidato}")
+            print(f"[DEBUG] [encontrar_punto_accesible_cruz] ✓ Punto accesible encontrado para mueble {coordenada_mueble}: {punto_candidato}")
             return punto_candidato
+    
+    # Buscar en radios mayores
     for radio in range(2, 8):
+        print(f"[DEBUG] [encontrar_punto_accesible_cruz] Buscando en radio {radio}")
         for dx, dy in direcciones_cruz:
             punto_candidato = (x + dx * radio, y + dy * radio)
             if punto_candidato in coordenadas_caminables:
-                print(f"[DEBUG] [encontrar_punto_accesible_cruz] Punto accesible encontrado (radio {radio}) para mueble {coordenada_mueble}: {punto_candidato}")
+                print(f"[DEBUG] [encontrar_punto_accesible_cruz] ✓ Punto accesible encontrado (radio {radio}) para mueble {coordenada_mueble}: {punto_candidato}")
                 return punto_candidato
-    print(f"[ERROR] [encontrar_punto_accesible_cruz] No se encontró punto accesible para mueble {coordenada_mueble}, usando (0,0)")
-    return (0, 0)
+    
+    # Si no encuentra nada, buscar cualquier punto caminable cercano
+    print(f"[WARNING] [encontrar_punto_accesible_cruz] No se encontró punto en cruz, buscando cualquier punto cercano...")
+    min_dist = float('inf')
+    mejor_punto = None
+    
+    for coord_caminable in coordenadas_caminables:
+        dist = abs(coord_caminable[0] - x) + abs(coord_caminable[1] - y)
+        if dist < min_dist:
+            min_dist = dist
+            mejor_punto = coord_caminable
+    
+    if mejor_punto:
+        print(f"[DEBUG] [encontrar_punto_accesible_cruz] ✓ Punto alternativo encontrado: {mejor_punto} (distancia: {min_dist})")
+        return mejor_punto
+    
+    print(f"[ERROR] [encontrar_punto_accesible_cruz] No se encontró ningún punto accesible para mueble {coordenada_mueble}")
+    raise ValueError(f"No hay puntos caminables accesibles para el mueble en {coordenada_mueble}")
 
 @router.post("/tareas/{id_tarea}/detalle")
 def agregar_producto_detalle(
@@ -1017,33 +1042,67 @@ def optimizar_rutas_por_detalle_tarea(
         ruta_mueble_individual = []
         distancia_total = 0
         
+        print(f"[DEBUG] Mueble {mueble_id}: coordenadas_mueble = {coordenadas_mueble}")
+        print(f"[DEBUG] Posición actual antes de calcular ruta: {posicion_actual}")
+        
         if coordenadas_mueble:
             # Encontrar coordenada de acceso al mueble (punto caminable más cercano)
             try:
+                # Obtener mapa activo
+                print(f"[DEBUG] Obteniendo mapa activo para mueble {mueble_id}...")
+                mapa_activo = db.query(Mapa).filter(Mapa.activo == True).first()
+                if not mapa_activo:
+                    print(f"[ERROR] No hay mapa activo en la base de datos")
+                    ruta_mueble_individual = []
+                    distancia_total = 0
+                    continue
+                
                 # Obtener coordenadas caminables del grafo
-                grafo = generar_grafo(db)
-                coordenadas_caminables = set(grafo.keys())
+                print(f"[DEBUG] Generando grafo para mueble {mueble_id} con mapa {mapa_activo.id_mapa}...")
+                grafo = generar_grafo(db, mapa_activo.id_mapa)
+                coordenadas_caminables = grafo  # grafo ya es un set o lista de coordenadas caminables
+                print(f"[DEBUG] Total coordenadas caminables: {len(coordenadas_caminables)}")
+                
+                # Mostrar algunas coordenadas caminables para debug
+                coordenadas_muestra = list(coordenadas_caminables)[:10]
+                print(f"[DEBUG] Primeras 10 coordenadas caminables: {coordenadas_muestra}")
                 
                 # Encontrar mejor punto de acceso al mueble
                 mejor_acceso = None
                 min_dist_acceso = float('inf')
                 
+                print(f"[DEBUG] Buscando punto de acceso para {len(coordenadas_mueble)} coordenadas del mueble...")
+                
                 for coord_mueble in coordenadas_mueble:
+                    print(f"[DEBUG] Buscando acceso para coordenada del mueble: {coord_mueble}")
                     try:
                         punto_acceso = encontrar_punto_accesible_cruz(coord_mueble, coordenadas_caminables)
+                        print(f"[DEBUG] Punto de acceso encontrado: {punto_acceso}")
+                        
                         dist_desde_actual = distancia_manhattan(posicion_actual, punto_acceso)
+                        print(f"[DEBUG] Distancia desde posición actual {posicion_actual}: {dist_desde_actual}")
+                        
                         if dist_desde_actual < min_dist_acceso:
                             min_dist_acceso = dist_desde_actual
                             mejor_acceso = punto_acceso
-                    except ValueError:
-                        print(f"[WARNING] No se pudo encontrar acceso para coordenada {coord_mueble} del mueble {mueble_id}")
+                            print(f"[DEBUG] Nuevo mejor acceso: {mejor_acceso} (distancia: {min_dist_acceso})")
+                            
+                    except ValueError as ve:
+                        print(f"[ERROR] Error en encontrar_punto_accesible_cruz para {coord_mueble}: {str(ve)}")
                         continue
+                    except Exception as e:
+                        print(f"[ERROR] Error inesperado buscando acceso para {coord_mueble}: {str(e)}")
+                        continue
+                
+                print(f"[DEBUG] Mejor acceso final para mueble {mueble_id}: {mejor_acceso}")
                 
                 if mejor_acceso:
                     # Calcular ruta desde posición actual hasta el mueble
                     try:
-                        ruta_hacia_mueble = calcular_ruta(db, posicion_actual, mejor_acceso)
-                        
+                        print(f"[DEBUG] [A* INPUT] inicio={posicion_actual}, meta={mejor_acceso}, ejemplo_walkable={list(coordenadas_caminables)[:5]}")
+                        ruta_hacia_mueble = calcular_ruta(db, mapa_activo.id_mapa, posicion_actual, mejor_acceso)
+                        print(f"[DEBUG] Ruta calculada: {len(ruta_hacia_mueble)} pasos")
+                        print(f"[DEBUG] Ruta completa: {ruta_hacia_mueble}")
                         # Convertir a formato de respuesta
                         for j, (x, y) in enumerate(ruta_hacia_mueble):
                             ruta_mueble_individual.append({
@@ -1051,32 +1110,55 @@ def optimizar_rutas_por_detalle_tarea(
                                 "x": x,
                                 "y": y
                             })
-                        
                         distancia_total = len(ruta_hacia_mueble) - 1 if len(ruta_hacia_mueble) > 1 else 0
-                        
+                        print(f"[DEBUG] Distancia total calculada: {distancia_total}")
                         # Actualizar posición actual para el siguiente mueble
                         posicion_actual = mejor_acceso
-                        
+                        print(f"[DEBUG] Posición actual actualizada a: {posicion_actual}")
                         # Agregar a ruta global completa
                         ruta_global_completa.extend(ruta_hacia_mueble)
-                        
-                        print(f"[DEBUG] Ruta generada para mueble {mueble_id}: {len(ruta_mueble_individual)} pasos, distancia: {distancia_total}")
-                        
+                        print(f"[DEBUG] ✅ Ruta generada exitosamente para mueble {mueble_id}")
+                        print(f"[DEBUG] - Pasos en ruta: {len(ruta_mueble_individual)}")
+                        print(f"[DEBUG] - Distancia: {distancia_total}")
                     except Exception as e:
                         print(f"[ERROR] Error calculando ruta hacia mueble {mueble_id}: {str(e)}")
+                        print(f"[ERROR] Tipo de error: {type(e)}")
+                        import traceback
+                        print(f"[ERROR] Traceback: {traceback.format_exc()}")
                         ruta_mueble_individual = []
                         distancia_total = 0
                 else:
-                    print(f"[WARNING] No se pudo encontrar punto de acceso para mueble {mueble_id}")
+                    print(f"[ERROR] No se pudo encontrar punto de acceso para mueble {mueble_id}")
+                    print(f"[DEBUG] Coordenadas del mueble: {coordenadas_mueble}")
+                    print(f"[DEBUG] ¿Hay coordenadas caminables cerca?")
+                    
+                    # Mostrar coordenadas caminables cerca del mueble para debug
+                    for coord_mueble in coordenadas_mueble:
+                        x, y = coord_mueble
+                        cercanas = []
+                        for dx in range(-2, 3):
+                            for dy in range(-2, 3):
+                                test_coord = (x + dx, y + dy)
+                                if test_coord in coordenadas_caminables:
+                                    cercanas.append(test_coord)
+                        print(f"[DEBUG] Coordenadas caminables cerca de {coord_mueble}: {cercanas}")
+                    
                     ruta_mueble_individual = []
                     distancia_total = 0
                     
             except Exception as e:
                 print(f"[ERROR] Error generando grafo o acceso para mueble {mueble_id}: {str(e)}")
+                print(f"[ERROR] Tipo de error: {type(e)}")
+                import traceback
+                print(f"[ERROR] Traceback: {traceback.format_exc()}")
                 ruta_mueble_individual = []
                 distancia_total = 0
         else:
-            print(f"[WARNING] Mueble {mueble_id} no tiene coordenadas definidas")
+            print(f"[ERROR] Mueble {mueble_id} no tiene coordenadas definidas")
+            print(f"[DEBUG] Objeto del mueble: {objeto}")
+            if objeto:
+                ubicaciones = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).all()
+                print(f"[DEBUG] Ubicaciones encontradas: {[(u.x, u.y) for u in ubicaciones]}")
             ruta_mueble_individual = []
             distancia_total = 0
         
