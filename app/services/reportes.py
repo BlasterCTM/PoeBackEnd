@@ -1106,8 +1106,8 @@ class ReportesService:
         
         fill_titulo = PatternFill(start_color=azul_principal, end_color=azul_principal, fill_type="solid")
         fill_encabezado = PatternFill(start_color=azul_claro, end_color=azul_claro, fill_type="solid")
-        fill_datos_par = PatternFill(start_color="FFFFFF", endColor="FFFFFF", fill_type="solid")
-        fill_datos_impar = PatternFill(start_color=gris_claro, endColor=gris_claro, fill_type="solid")
+        fill_datos_par = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        fill_datos_impar = PatternFill(start_color=gris_claro, end_color=gris_claro, fill_type="solid")
         
         border_fino = Border(
             left=Side(style='thin'), right=Side(style='thin'),
