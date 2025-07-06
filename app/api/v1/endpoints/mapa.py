@@ -288,39 +288,92 @@ def asignar_producto_a_punto(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    id_producto = body.get("id_producto")
-    id_usuario = body.get("id_usuario")
-    if not id_producto or not id_usuario:
-        raise HTTPException(status_code=400, detail="Faltan datos para asignar producto y usuario.")
-    if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
-        raise HTTPException(status_code=403, detail="No autorizado.")
+    print(f" [INICIO] Endpoint asignar-producto llamado:")
+    print(f"   - id_punto: {id_punto}")
+    print(f"   - body: {body}")
+    print(f"   - current_user: {current_user.nombre if current_user else 'None'}")
+    print(f"   - user_role: {current_user.rol.nombre_rol if current_user and current_user.rol else 'None'}")
+    
+    try:
+        id_producto = body.get("id_producto")
+        print(f"   - id_producto extraído: {id_producto} (tipo: {type(id_producto)})")
+        print(f"   - El supervisor se obtendrá automáticamente del producto")
+        
+        if not id_producto:
+            print(" Error: Falta el ID del producto")
+            raise HTTPException(status_code=400, detail="Falta el ID del producto.")
+        
+        if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
+            print(f" Error: Usuario no autorizado - rol: {current_user.rol.nombre_rol}")
+            raise HTTPException(status_code=403, detail="No autorizado.")
 
-    # Asignar producto y usuario al punto
-    punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == id_punto).first()
-    if not punto:
-        raise HTTPException(status_code=404, detail="Punto de reposición no encontrado.")
-    punto.id_producto = id_producto
-    punto.id_usuario = id_usuario
-    db.commit()
-    db.refresh(punto)
+        # Verificar que el producto existe y obtener el supervisor asignado
+        producto = db.query(Producto).filter(Producto.id_producto == id_producto).first()
+        if not producto:
+            print(f" Error: Producto {id_producto} no encontrado")
+            raise HTTPException(status_code=404, detail=f"Producto con ID {id_producto} no encontrado.")
+        print(f" Producto encontrado: {producto.nombre}")
+        
+        # Obtener el supervisor asignado al producto
+        id_usuario_supervisor = producto.id_usuario
+        print(f" Supervisor asignado al producto: {id_usuario_supervisor}")
 
-    # Construir respuesta como antes
-    producto = db.query(Producto).filter(Producto.id_producto == punto.id_producto).first() if punto.id_producto else None
-    producto_out = None
-    if producto:
-        producto_out = ProductoAsociado(
-            nombre=producto.nombre,
-            categoria=producto.categoria,
-            unidad_tipo=producto.unidad_tipo,
-            unidad_cantidad=producto.unidad_cantidad
+        # Verificar que el supervisor existe
+        supervisor = db.query(Usuario).filter(Usuario.id_usuario == id_usuario_supervisor).first()
+        if not supervisor:
+            print(f" Error: Supervisor {id_usuario_supervisor} no encontrado")
+            raise HTTPException(status_code=404, detail=f"Supervisor con ID {id_usuario_supervisor} no encontrado.")
+        print(f" Supervisor encontrado: {supervisor.nombre}")
+
+        # Asignar producto y usuario al punto
+        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == id_punto).first()
+        if not punto:
+            print(f" Error: Punto {id_punto} no encontrado")
+            raise HTTPException(status_code=404, detail="Punto de reposición no encontrado.")
+        
+        print(f" Punto encontrado: {punto.id_punto} (mueble: {punto.id_mueble}, nivel: {punto.nivel}, estanteria: {punto.estanteria})")
+        
+        # Guardar estado anterior para logging
+        producto_anterior = punto.id_producto
+        usuario_anterior = punto.id_usuario
+        
+        punto.id_producto = id_producto
+        punto.id_usuario = id_usuario_supervisor  # Asignar el supervisor del producto, no el administrador
+        db.commit()
+        db.refresh(punto)
+        print(f" Producto asignado exitosamente:")
+        print(f"   - Producto anterior: {producto_anterior} -> Nuevo: {punto.id_producto}")
+        print(f"   - Usuario anterior: {usuario_anterior} -> Nuevo: {punto.id_usuario} (supervisor del producto)")
+
+        # Construir respuesta como antes
+        producto_final = db.query(Producto).filter(Producto.id_producto == punto.id_producto).first() if punto.id_producto else None
+        producto_out = None
+        if producto_final:
+            producto_out = ProductoAsociado(
+                nombre=producto_final.nombre,
+                categoria=producto_final.categoria,
+                unidad_tipo=producto_final.unidad_tipo,
+                unidad_cantidad=producto_final.unidad_cantidad
+            )
+        
+        response = PuntoReposicionOut(
+            id_punto=punto.id_punto,
+            id_mueble=punto.id_mueble,
+            nivel=punto.nivel,
+            estanteria=punto.estanteria,
+            producto=producto_out
         )
-    return PuntoReposicionOut(
-        id_punto=punto.id_punto,
-        id_mueble=punto.id_mueble,
-        nivel=punto.nivel,
-        estanteria=punto.estanteria,
-        producto=producto_out
-    )
+        print(f" [FIN] Respuesta construida exitosamente: {response}")
+        return response
+        
+    except HTTPException as e:
+        print(f" HTTPException capturada: {e.status_code} - {e.detail}")
+        raise e
+    except Exception as e:
+        print(f" Error inesperado: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f" Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.delete("/puntos/{id_punto}/desasignar-producto", response_model=PuntoReposicionOut)
 def desasignar_producto_punto(

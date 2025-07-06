@@ -1029,8 +1029,8 @@ def test_18_asignar_productos_puntos(client):
     if IDS_CREADOS["puntos"] and IDS_CREADOS["productos"]:
         try:
             asignar_data = {
-                "id_producto": IDS_CREADOS["productos"][0],
-                "id_usuario": IDS_CREADOS["usuarios"].get("reponedor", 1)
+                "id_producto": IDS_CREADOS["productos"][0]
+                # Ya no se necesita id_usuario - se asigna automáticamente el supervisor del producto
             }
             
             response = client.put(f"/puntos/{IDS_CREADOS['puntos'][0]}/asignar-producto", json=asignar_data, headers=headers)
