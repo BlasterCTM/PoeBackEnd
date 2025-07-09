@@ -664,6 +664,8 @@ def detalle_tarea(
         raise HTTPException(status_code=404, detail="Tarea no encontrada.")
     if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value and tarea.id_supervisor != current_user.id_usuario:
         raise HTTPException(status_code=403, detail="No tienes acceso a esta tarea.")
+    elif current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value, RolEnum.REPONEDOR.value]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para acceder a esta funcionalidad.")
     estado_nombre = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first().nombre_estado
     reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
     supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_supervisor).first()
