@@ -322,3 +322,305 @@ async def obtener_resumen_general_estadisticas(
             status_code=500,
             detail="Error interno del servidor al obtener resumen general"
         )
+
+@router.get("/supervisor/metricas")
+async def obtener_metricas_supervisor(
+    fecha_inicio: Optional[str] = Query(None, description="Fecha de inicio del período (formato YYYY-MM-DD)"),
+    fecha_fin: Optional[str] = Query(None, description="Fecha de fin del período (formato YYYY-MM-DD)"),
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Obtiene métricas específicas del supervisor autenticado.
+    
+    Este endpoint proporciona métricas personalizadas para el supervisor,
+    incluyendo estadísticas de sus reponedores y productos asociados.
+    
+    - **fecha_inicio**: Fecha de inicio del período (formato YYYY-MM-DD)
+    - **fecha_fin**: Fecha de fin del período (formato YYYY-MM-DD)
+    - Solo accesible para supervisores
+    """
+    try:
+        # Verificar que el usuario sea supervisor
+        if current_user.rol.nombre_rol != RolEnum.SUPERVISOR.value:
+            raise HTTPException(
+                status_code=403,
+                detail="Acceso denegado. Solo los supervisores pueden acceder a este endpoint."
+            )
+        
+        # Validar y convertir fechas
+        fecha_inicio_date = None
+        fecha_fin_date = None
+        
+        if fecha_inicio:
+            try:
+                fecha_inicio_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Formato de fecha_inicio inválido. Use YYYY-MM-DD"
+                )
+        
+        if fecha_fin:
+            try:
+                fecha_fin_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Formato de fecha_fin inválido. Use YYYY-MM-DD"
+                )
+        
+        # Obtener métricas del supervisor
+        service = EstadisticasPuntosService(db)
+        metricas = service.obtener_metricas_supervisor(
+            id_supervisor=current_user.id_usuario,
+            fecha_inicio=fecha_inicio_date,
+            fecha_fin=fecha_fin_date
+        )
+        
+        logger.info(f"Métricas del supervisor obtenidas por usuario {current_user.id_usuario}")
+        
+        return {
+            "success": True,
+            "message": "Métricas del supervisor obtenidas exitosamente",
+            "data": metricas
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener métricas del supervisor: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error interno del servidor al obtener métricas del supervisor"
+        )
+
+@router.get("/supervisor/{id_supervisor}/metricas")
+async def obtener_metricas_supervisor_por_id(
+    id_supervisor: int,
+    fecha_inicio: Optional[str] = Query(None, description="Fecha de inicio del período (formato YYYY-MM-DD)"),
+    fecha_fin: Optional[str] = Query(None, description="Fecha de fin del período (formato YYYY-MM-DD)"),
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Obtiene métricas específicas de un supervisor por ID.
+    
+    Este endpoint permite al administrador obtener métricas detalladas
+    de un supervisor específico, incluyendo sus reponedores y productos.
+    
+    - **id_supervisor**: ID del supervisor a consultar
+    - **fecha_inicio**: Fecha de inicio del período (formato YYYY-MM-DD)
+    - **fecha_fin**: Fecha de fin del período (formato YYYY-MM-DD)
+    - Solo accesible para administradores
+    """
+    try:
+        # Verificar que el usuario sea administrador
+        if current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
+            raise HTTPException(
+                status_code=403,
+                detail="Acceso denegado. Solo los administradores pueden acceder a este endpoint."
+            )
+        
+        # Validar y convertir fechas
+        fecha_inicio_date = None
+        fecha_fin_date = None
+        
+        if fecha_inicio:
+            try:
+                fecha_inicio_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Formato de fecha_inicio inválido. Use YYYY-MM-DD"
+                )
+        
+        if fecha_fin:
+            try:
+                fecha_fin_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Formato de fecha_fin inválido. Use YYYY-MM-DD"
+                )
+        
+        # Obtener métricas del supervisor específico
+        service = EstadisticasPuntosService(db)
+        metricas = service.obtener_metricas_supervisor(
+            id_supervisor=id_supervisor,
+            fecha_inicio=fecha_inicio_date,
+            fecha_fin=fecha_fin_date
+        )
+        
+        if "error" in metricas:
+            if metricas["error"] == "Supervisor no encontrado":
+                raise HTTPException(
+                    status_code=404,
+                    detail="Supervisor no encontrado"
+                )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=metricas["error"]
+                )
+        
+        logger.info(f"Métricas del supervisor {id_supervisor} obtenidas por administrador {current_user.id_usuario}")
+        
+        return {
+            "success": True,
+            "message": "Métricas del supervisor obtenidas exitosamente",
+            "data": metricas
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener métricas del supervisor {id_supervisor}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error interno del servidor al obtener métricas del supervisor"
+        )
+
+@router.get("/supervisor/reponedores-rendimiento")
+async def obtener_rendimiento_reponedores(
+    fecha_inicio: Optional[str] = Query(None, description="Fecha de inicio del período (formato YYYY-MM-DD)"),
+    fecha_fin: Optional[str] = Query(None, description="Fecha de fin del período (formato YYYY-MM-DD)"),
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Obtiene el rendimiento de los reponedores del supervisor autenticado.
+    
+    Este endpoint proporciona métricas de rendimiento de todos los reponedores
+    asignados al supervisor, incluyendo tareas completadas, tiempo promedio, etc.
+    
+    - **fecha_inicio**: Fecha de inicio del período (formato YYYY-MM-DD)
+    - **fecha_fin**: Fecha de fin del período (formato YYYY-MM-DD)
+    - Solo accesible para supervisores
+    """
+    try:
+        # Verificar que el usuario sea supervisor
+        if current_user.rol.nombre_rol != RolEnum.SUPERVISOR.value:
+            raise HTTPException(
+                status_code=403,
+                detail="Acceso denegado. Solo los supervisores pueden acceder a este endpoint."
+            )
+        
+        # Validar y convertir fechas
+        fecha_inicio_date = None
+        fecha_fin_date = None
+        
+        if fecha_inicio:
+            try:
+                fecha_inicio_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Formato de fecha_inicio inválido. Use YYYY-MM-DD"
+                )
+        
+        if fecha_fin:
+            try:
+                fecha_fin_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Formato de fecha_fin inválido. Use YYYY-MM-DD"
+                )
+        
+        # Obtener rendimiento de reponedores
+        service = EstadisticasPuntosService(db)
+        rendimiento = service.obtener_rendimiento_reponedores_supervisor(
+            id_supervisor=current_user.id_usuario,
+            fecha_inicio=fecha_inicio_date,
+            fecha_fin=fecha_fin_date
+        )
+        
+        logger.info(f"Rendimiento de reponedores obtenido por supervisor {current_user.id_usuario}")
+        
+        return {
+            "success": True,
+            "message": "Rendimiento de reponedores obtenido exitosamente",
+            "data": rendimiento
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener rendimiento de reponedores: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error interno del servidor al obtener rendimiento de reponedores"
+        )
+
+@router.get("/supervisor/productos-estadisticas")
+async def obtener_estadisticas_productos_supervisor(
+    fecha_inicio: Optional[str] = Query(None, description="Fecha de inicio del período (formato YYYY-MM-DD)"),
+    fecha_fin: Optional[str] = Query(None, description="Fecha de fin del período (formato YYYY-MM-DD)"),
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Obtiene estadísticas de productos del supervisor autenticado.
+    
+    Este endpoint proporciona métricas detalladas sobre los productos
+    asignados al supervisor, incluyendo tareas de reposición, frecuencia, etc.
+    
+    - **fecha_inicio**: Fecha de inicio del período (formato YYYY-MM-DD)
+    - **fecha_fin**: Fecha de fin del período (formato YYYY-MM-DD)
+    - Solo accesible para supervisores
+    """
+    try:
+        # Verificar que el usuario sea supervisor
+        if current_user.rol.nombre_rol != RolEnum.SUPERVISOR.value:
+            raise HTTPException(
+                status_code=403,
+                detail="Acceso denegado. Solo los supervisores pueden acceder a este endpoint."
+            )
+        
+        # Validar y convertir fechas
+        fecha_inicio_date = None
+        fecha_fin_date = None
+        
+        if fecha_inicio:
+            try:
+                fecha_inicio_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Formato de fecha_inicio inválido. Use YYYY-MM-DD"
+                )
+        
+        if fecha_fin:
+            try:
+                fecha_fin_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Formato de fecha_fin inválido. Use YYYY-MM-DD"
+                )
+        
+        # Obtener estadísticas de productos
+        service = EstadisticasPuntosService(db)
+        estadisticas = service.obtener_estadisticas_productos_supervisor(
+            id_supervisor=current_user.id_usuario,
+            fecha_inicio=fecha_inicio_date,
+            fecha_fin=fecha_fin_date
+        )
+        
+        logger.info(f"Estadísticas de productos obtenidas por supervisor {current_user.id_usuario}")
+        
+        return {
+            "success": True,
+            "message": "Estadísticas de productos obtenidas exitosamente",
+            "data": estadisticas
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener estadísticas de productos: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error interno del servidor al obtener estadísticas de productos"
+        )

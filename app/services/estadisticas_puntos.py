@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, case
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
 from app.models.punto_reposicion import PuntoReposicion
@@ -337,3 +337,379 @@ class EstadisticasPuntosService:
         except Exception as e:
             logger.error(f"Error al obtener resumen del punto {id_punto}: {str(e)}")
             return {"error": "Error interno del servidor"}
+    
+    def obtener_metricas_supervisor(
+        self,
+        id_supervisor: int,
+        fecha_inicio: Optional[date] = None,
+        fecha_fin: Optional[date] = None
+    ) -> Dict[str, Any]:
+        """
+        Obtiene métricas específicas de un supervisor.
+        
+        Args:
+            id_supervisor: ID del supervisor
+            fecha_inicio: Fecha de inicio del período
+            fecha_fin: Fecha de fin del período
+            
+        Returns:
+            Dict con las métricas del supervisor
+        """
+        try:
+            # Verificar que el supervisor existe
+            supervisor = self.db.query(Usuario).filter(
+                Usuario.id_usuario == id_supervisor
+            ).first()
+            
+            if not supervisor:
+                return {"error": "Supervisor no encontrado"}
+            
+            # Construir filtros de fecha
+            filtros = []
+            if fecha_inicio:
+                filtros.append(Tarea.fecha_creacion >= fecha_inicio)
+            if fecha_fin:
+                filtros.append(Tarea.fecha_creacion <= fecha_fin)
+            
+            # Obtener productos del supervisor
+            productos_supervisor = self.db.query(Producto).filter(
+                Producto.id_usuario == id_supervisor
+            ).all()
+            
+            # Obtener tareas relacionadas con productos del supervisor
+            tareas_query = self.db.query(Tarea).join(
+                DetalleTarea
+            ).join(
+                Producto
+            ).filter(
+                Producto.id_usuario == id_supervisor
+            )
+            
+            if filtros:
+                tareas_query = tareas_query.filter(and_(*filtros))
+            
+            tareas_totales = tareas_query.count()
+            tareas_completadas = tareas_query.filter(
+                Tarea.estado == "completada"
+            ).count()
+            
+            # Estadísticas de productos
+            productos_stats = self.db.query(
+                func.count(DetalleTarea.id_detalle).label('total_reposiciones'),
+                func.sum(DetalleTarea.cantidad).label('total_cantidad'),
+                func.count(func.distinct(DetalleTarea.id_producto)).label('productos_diferentes')
+            ).join(
+                Producto
+            ).filter(
+                Producto.id_usuario == id_supervisor
+            )
+            
+            if filtros:
+                productos_stats = productos_stats.join(Tarea).filter(and_(*filtros))
+            
+            stats = productos_stats.first()
+            
+            # Reponedores más activos - simplificado
+            reponedores_activos = self.db.query(
+                Usuario.id_usuario,
+                Usuario.nombre,
+                func.count(Tarea.id_tarea).label('tareas_completadas')
+            ).join(
+                Tarea, Tarea.id_reponedor == Usuario.id_usuario
+            ).filter(
+                Tarea.id_supervisor == id_supervisor,
+                Tarea.id_reponedor.isnot(None)
+            )
+            
+            if filtros:
+                reponedores_activos = reponedores_activos.filter(and_(*filtros))
+            
+            reponedores_activos = reponedores_activos.group_by(
+                Usuario.id_usuario,
+                Usuario.nombre
+            ).order_by(
+                func.count(Tarea.id_tarea).desc()
+            ).limit(10).all()
+            
+            # Productos más movidos
+            productos_movidos = self.db.query(
+                Producto.id_producto,
+                Producto.nombre,
+                func.sum(DetalleTarea.cantidad).label('total_cantidad'),
+                func.count(DetalleTarea.id_detalle).label('veces_repuesto')
+            ).join(
+                DetalleTarea
+            ).filter(
+                Producto.id_usuario == id_supervisor
+            )
+            
+            if filtros:
+                productos_movidos = productos_movidos.join(Tarea).filter(and_(*filtros))
+            
+            productos_movidos = productos_movidos.group_by(
+                Producto.id_producto,
+                Producto.nombre
+            ).order_by(
+                func.sum(DetalleTarea.cantidad).desc()
+            ).limit(10).all()
+            
+            return {
+                "supervisor": {
+                    "id": supervisor.id_usuario,
+                    "nombre": supervisor.nombre,
+                    "correo": supervisor.correo
+                },
+                "resumen_general": {
+                    "total_productos": len(productos_supervisor),
+                    "total_tareas": tareas_totales,
+                    "tareas_completadas": tareas_completadas,
+                    "tasa_completacion": round((tareas_completadas / tareas_totales * 100) if tareas_totales > 0 else 0, 2),
+                    "total_reposiciones": int(stats.total_reposiciones or 0),
+                    "total_cantidad_repuesta": int(stats.total_cantidad or 0),
+                    "productos_diferentes_repuestos": int(stats.productos_diferentes or 0)
+                },
+                "reponedores_activos": [
+                    {
+                        "id": rep.id_usuario,
+                        "nombre": rep.nombre,
+                        "tareas_completadas": rep.tareas_completadas
+                    }
+                    for rep in reponedores_activos
+                ],
+                "productos_mas_movidos": [
+                    {
+                        "id": prod.id_producto,
+                        "nombre": prod.nombre,
+                        "total_cantidad": int(prod.total_cantidad),
+                        "veces_repuesto": prod.veces_repuesto
+                    }
+                    for prod in productos_movidos
+                ],
+                "filtros_aplicados": {
+                    "fecha_inicio": fecha_inicio.strftime("%Y-%m-%d") if fecha_inicio else None,
+                    "fecha_fin": fecha_fin.strftime("%Y-%m-%d") if fecha_fin else None
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error al obtener métricas del supervisor {id_supervisor}: {str(e)}")
+            return {"error": "Error interno del servidor"}
+    
+    def obtener_rendimiento_reponedores_supervisor(
+        self,
+        id_supervisor: int,
+        fecha_inicio: Optional[date] = None,
+        fecha_fin: Optional[date] = None
+    ) -> Dict[str, Any]:
+        """
+        Obtiene el rendimiento de los reponedores de un supervisor.
+        
+        Args:
+            id_supervisor: ID del supervisor
+            fecha_inicio: Fecha de inicio del período
+            fecha_fin: Fecha de fin del período
+            
+        Returns:
+            Dict con el rendimiento de reponedores
+        """
+        try:
+            logger.info(f"Iniciando obtención de rendimiento para supervisor {id_supervisor}")
+            
+            # Construir filtros de fecha
+            filtros = [Tarea.id_supervisor == id_supervisor]
+            if fecha_inicio:
+                filtros.append(Tarea.fecha_creacion >= fecha_inicio)
+                logger.info(f"Filtro fecha_inicio: {fecha_inicio}")
+            if fecha_fin:
+                filtros.append(Tarea.fecha_creacion <= fecha_fin)
+                logger.info(f"Filtro fecha_fin: {fecha_fin}")
+            
+            # Obtener rendimiento de reponedores usando subconsulta más simple
+            logger.info("Construyendo consulta de rendimiento...")
+            rendimiento_query = self.db.query(
+                Usuario.id_usuario,
+                Usuario.nombre,
+                Usuario.correo,
+                func.count(Tarea.id_tarea).label('tareas_totales'),
+                func.sum(
+                    case(
+                        (Tarea.estado_id == 3, 1),
+                        else_=0
+                    )
+                ).label('tareas_completadas')
+            ).join(
+                Tarea, Tarea.id_reponedor == Usuario.id_usuario
+            ).filter(
+                and_(*filtros),
+                Tarea.id_reponedor.isnot(None)
+            ).group_by(
+                Usuario.id_usuario,
+                Usuario.nombre,
+                Usuario.correo
+            ).order_by(
+                func.count(Tarea.id_tarea).desc()
+            )
+            
+            logger.info("Ejecutando consulta...")
+            rendimiento_result = rendimiento_query.all()
+            logger.info(f"Consulta ejecutada, {len(rendimiento_result)} resultados")
+            
+            return {
+                "reponedores": [
+                    {
+                        "id": rep.id_usuario,
+                        "nombre": rep.nombre,
+                        "correo": rep.correo,
+                        "tareas_totales": rep.tareas_totales,
+                        "tareas_completadas": rep.tareas_completadas,
+                        "tasa_completacion": round((rep.tareas_completadas / rep.tareas_totales * 100) if rep.tareas_totales > 0 else 0, 2),
+                        "tiempo_promedio_horas": 0  # Simplificado por ahora
+                    }
+                    for rep in rendimiento_result
+                ],
+                "filtros_aplicados": {
+                    "fecha_inicio": fecha_inicio.strftime("%Y-%m-%d") if fecha_inicio else None,
+                    "fecha_fin": fecha_fin.strftime("%Y-%m-%d") if fecha_fin else None
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error al obtener rendimiento de reponedores del supervisor {id_supervisor}: {str(e)}")
+            logger.error(f"Tipo de error: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"error": f"Error interno del servidor: {str(e)}"}
+    
+    def obtener_estadisticas_productos_supervisor(
+        self,
+        id_supervisor: int,
+        fecha_inicio: Optional[date] = None,
+        fecha_fin: Optional[date] = None
+    ) -> Dict[str, Any]:
+        """
+        Obtiene estadísticas de productos de un supervisor.
+        
+        Args:
+            id_supervisor: ID del supervisor
+            fecha_inicio: Fecha de inicio del período
+            fecha_fin: Fecha de fin del período
+            
+        Returns:
+            Dict con las estadísticas de productos
+        """
+        try:
+            logger.info(f"Iniciando obtención de estadísticas de productos para supervisor {id_supervisor}")
+            
+            # Construir filtros de fecha
+            filtros = []
+            if fecha_inicio:
+                filtros.append(Tarea.fecha_creacion >= fecha_inicio)
+                logger.info(f"Filtro fecha_inicio: {fecha_inicio}")
+            if fecha_fin:
+                filtros.append(Tarea.fecha_creacion <= fecha_fin)
+                logger.info(f"Filtro fecha_fin: {fecha_fin}")
+            
+            # Obtener estadísticas de productos - consulta simplificada
+            logger.info("Construyendo consulta de productos...")
+            productos_query = self.db.query(
+                Producto.id_producto,
+                Producto.nombre,
+                Producto.codigo_unico,
+                Producto.unidad_tipo,
+                func.count(DetalleTarea.id_detalle).label('total_reposiciones'),
+                func.sum(DetalleTarea.cantidad).label('total_cantidad'),
+                func.count(func.distinct(DetalleTarea.id_punto)).label('puntos_diferentes'),
+                func.avg(DetalleTarea.cantidad).label('cantidad_promedio')
+            ).join(
+                DetalleTarea, DetalleTarea.id_producto == Producto.id_producto
+            ).filter(
+                Producto.id_usuario == id_supervisor
+            )
+            
+            # Aplicar filtros de fecha si existen
+            if filtros:
+                productos_query = productos_query.join(
+                    Tarea, Tarea.id_tarea == DetalleTarea.id_tarea
+                ).filter(and_(*filtros))
+            
+            productos_query = productos_query.group_by(
+                Producto.id_producto,
+                Producto.nombre,
+                Producto.codigo_unico,
+                Producto.unidad_tipo
+            ).order_by(
+                func.sum(DetalleTarea.cantidad).desc()
+            )
+            
+            logger.info("Ejecutando consulta de productos...")
+            productos = productos_query.all()
+            logger.info(f"Consulta de productos ejecutada, {len(productos)} resultados")
+            
+            # Productos con más frecuencia de reposición - consulta simplificada
+            logger.info("Construyendo consulta de productos frecuentes...")
+            productos_frecuentes_query = self.db.query(
+                Producto.id_producto,
+                Producto.nombre,
+                func.count(DetalleTarea.id_detalle).label('frecuencia_reposicion')
+            ).join(
+                DetalleTarea, DetalleTarea.id_producto == Producto.id_producto
+            ).filter(
+                Producto.id_usuario == id_supervisor
+            )
+            
+            # Aplicar filtros de fecha si existen
+            if filtros:
+                productos_frecuentes_query = productos_frecuentes_query.join(
+                    Tarea, Tarea.id_tarea == DetalleTarea.id_tarea
+                ).filter(and_(*filtros))
+            
+            productos_frecuentes_query = productos_frecuentes_query.group_by(
+                Producto.id_producto,
+                Producto.nombre
+            ).order_by(
+                func.count(DetalleTarea.id_detalle).desc()
+            ).limit(10)
+            
+            logger.info("Ejecutando consulta de productos frecuentes...")
+            productos_frecuentes = productos_frecuentes_query.all()
+            logger.info(f"Consulta de productos frecuentes ejecutada, {len(productos_frecuentes)} resultados")
+            
+            return {
+                "productos": [
+                    {
+                        "id": prod.id_producto,
+                        "nombre": prod.nombre,
+                        "codigo_unico": prod.codigo_unico,
+                        "unidad_tipo": prod.unidad_tipo,
+                        "total_reposiciones": prod.total_reposiciones,
+                        "total_cantidad": int(prod.total_cantidad or 0),
+                        "puntos_diferentes": prod.puntos_diferentes,
+                        "cantidad_promedio": round(prod.cantidad_promedio, 2) if prod.cantidad_promedio else 0
+                    }
+                    for prod in productos
+                ],
+                "productos_mas_frecuentes": [
+                    {
+                        "id": prod.id_producto,
+                        "nombre": prod.nombre,
+                        "frecuencia_reposicion": prod.frecuencia_reposicion
+                    }
+                    for prod in productos_frecuentes
+                ],
+                "resumen": {
+                    "total_productos": len(productos),
+                    "total_reposiciones": sum(prod.total_reposiciones for prod in productos),
+                    "total_cantidad": sum(int(prod.total_cantidad or 0) for prod in productos)
+                },
+                "filtros_aplicados": {
+                    "fecha_inicio": fecha_inicio.strftime("%Y-%m-%d") if fecha_inicio else None,
+                    "fecha_fin": fecha_fin.strftime("%Y-%m-%d") if fecha_fin else None
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error al obtener estadísticas de productos del supervisor {id_supervisor}: {str(e)}")
+            logger.error(f"Tipo de error: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"error": f"Error interno del servidor: {str(e)}"}
