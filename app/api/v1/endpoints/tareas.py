@@ -500,19 +500,64 @@ def listar_tareas_disponibles(db: Session = Depends(get_db)):
     estados_disponibles = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.in_(["sin asignar", "pendiente"]))
     ids_estados = [e.estado_id for e in estados_disponibles]
     tareas = db.query(Tarea).filter(Tarea.estado_id.in_(ids_estados)).all()
-    return tareas
+    
+    # Enriquecer cada tarea con el nombre del supervisor
+    tareas_enriquecidas = []
+    for tarea in tareas:
+        supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_supervisor).first()
+        tarea_dict = {
+            "id_tarea": tarea.id_tarea,
+            "fecha_creacion": tarea.fecha_creacion,
+            "estado_id": tarea.estado_id,
+            "id_supervisor": tarea.id_supervisor,
+            "id_reponedor": tarea.id_reponedor,
+            "nombre_supervisor": supervisor.nombre if supervisor else None
+        }
+        tareas_enriquecidas.append(tarea_dict)
+    
+    return tareas_enriquecidas
 
 @router.get("/tareas/asignadas", response_model=list[TareaResponse])
 def listar_tareas_asignadas(db: Session = Depends(get_db)):
     # Buscar tareas con reponedor asignado (id_reponedor no nulo)
     tareas = db.query(Tarea).filter(Tarea.id_reponedor.isnot(None)).all()
-    return tareas
+    
+    # Enriquecer cada tarea con el nombre del supervisor
+    tareas_enriquecidas = []
+    for tarea in tareas:
+        supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_supervisor).first()
+        tarea_dict = {
+            "id_tarea": tarea.id_tarea,
+            "fecha_creacion": tarea.fecha_creacion,
+            "estado_id": tarea.estado_id,
+            "id_supervisor": tarea.id_supervisor,
+            "id_reponedor": tarea.id_reponedor,
+            "nombre_supervisor": supervisor.nombre if supervisor else None
+        }
+        tareas_enriquecidas.append(tarea_dict)
+    
+    return tareas_enriquecidas
 
 @router.get("/tareas/no-asignadas", response_model=list[TareaResponse])
 def listar_tareas_no_asignadas(db: Session = Depends(get_db)):
     # Buscar tareas sin reponedor asignado (id_reponedor es nulo)
     tareas = db.query(Tarea).filter(Tarea.id_reponedor.is_(None)).all()
-    return tareas
+    
+    # Enriquecer cada tarea con el nombre del supervisor
+    tareas_enriquecidas = []
+    for tarea in tareas:
+        supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_supervisor).first()
+        tarea_dict = {
+            "id_tarea": tarea.id_tarea,
+            "fecha_creacion": tarea.fecha_creacion,
+            "estado_id": tarea.estado_id,
+            "id_supervisor": tarea.id_supervisor,
+            "id_reponedor": tarea.id_reponedor,
+            "nombre_supervisor": supervisor.nombre if supervisor else None
+        }
+        tareas_enriquecidas.append(tarea_dict)
+    
+    return tareas_enriquecidas
 
 @router.get("/tareas/supervisor")
 def listar_tareas_supervisor(
@@ -621,6 +666,7 @@ def detalle_tarea(
         raise HTTPException(status_code=403, detail="No tienes acceso a esta tarea.")
     estado_nombre = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first().nombre_estado
     reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
+    supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_supervisor).first()
     detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == tarea.id_tarea).all()
     productos = []
     for d in detalles:
@@ -640,6 +686,8 @@ def detalle_tarea(
         "id_tarea": tarea.id_tarea,
         "estado": estado_nombre,
         "reponedor": reponedor.nombre if reponedor else None,
+        "supervisor": supervisor.nombre if supervisor else None,
+        "id_supervisor": tarea.id_supervisor,
         "fecha_creacion": str(tarea.fecha_creacion),
         "productos": productos
     }

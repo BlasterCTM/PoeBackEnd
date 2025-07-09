@@ -27,6 +27,9 @@ class ProductoUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=1, max_length=100)
     categoria: Optional[str] = Field(None, min_length=1, max_length=50)
     codigo_unico: Optional[str] = Field(None, min_length=1, max_length=50)
+    id_usuario: Optional[int] = Field(None, description="ID del supervisor asignado al producto")
+    unidad_tipo: Optional[str] = Field(None, min_length=1, max_length=20)
+    unidad_cantidad: Optional[int] = Field(None, gt=0)
 
     @validator('nombre')
     def nombre_no_vacio(cls, v):
@@ -46,12 +49,29 @@ class ProductoUpdate(BaseModel):
             raise ValueError('El código único no puede estar vacío')
         return v
 
+    @validator('unidad_tipo')
+    def unidad_tipo_no_vacio(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError('El tipo de unidad no puede estar vacío')
+        return v
+
     class Config:
         from_attributes = True
         json_schema_extra = {
             "example": {
                 "nombre": "Leche descremada 1L",
                 "categoria": "Lácteos",
-                "codigo_unico": "LECH-001"
+                "codigo_unico": "LECH-004",
+                "id_usuario": 1,
+                "unidad_tipo": "litros",
+                "unidad_cantidad": 1
             }
         }
+
+class ProductoOutConSupervisor(ProductoBase):
+    id_producto: int
+    id_usuario: int
+    nombre_supervisor: Optional[str] = Field(None, description="Nombre del supervisor que creó el producto")
+    
+    class Config:
+        from_attributes = True

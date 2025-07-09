@@ -90,12 +90,15 @@ def producto_vinculado_a_tareas_activas(db: Session, id_producto: int, estados_a
 def buscar_productos(
     db: Session,
     nombre: str = None,
-    categoria: str = None
+    categoria: str = None,
+    id_usuario: int = None
 ):
     query = db.query(Producto).filter(Producto.estado == "activo")
     if nombre:
         query = query.filter(func.lower(Producto.nombre).ilike(f"%{nombre.lower()}%"))
     if categoria:
         query = query.filter(func.lower(Producto.categoria) == categoria.lower())
+    if id_usuario is not None:
+        query = query.filter(Producto.id_usuario == id_usuario)
     resultados = query.order_by(asc(Producto.nombre)).all()
     return resultados

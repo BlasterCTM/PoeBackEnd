@@ -41,6 +41,7 @@ class TareaResponse(TareaBase):
     fecha_creacion: date
     estado_id: int
     id_supervisor: int
+    nombre_supervisor: Optional[str] = Field(None, description="Nombre del supervisor que creó la tarea")
 
     class Config:
         from_attributes = True

@@ -12,6 +12,7 @@ from app.repositories.producto import (
 from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
 from app.models.usuario import Usuario, RolEnum
+from app.models.usuario import Usuario as UsuarioModel
 from fastapi import Response
 import uuid
 from app.repositories.punto_reposicion import (
@@ -64,7 +65,32 @@ def listar_productos(
         data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado, id_usuario=current_user.id_usuario)
     else:
         data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado)
-    return data
+    
+    # Enriquecer los productos con el nombre del supervisor
+    productos_enriquecidos = []
+    for producto in data["productos"]:
+        # Obtener el supervisor del producto
+        supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == producto.id_usuario).first()
+        
+        producto_dict = {
+            "id_producto": producto.id_producto,
+            "nombre": producto.nombre,
+            "categoria": producto.categoria,
+            "unidad_tipo": producto.unidad_tipo,
+            "unidad_cantidad": producto.unidad_cantidad,
+            "codigo_unico": producto.codigo_unico,
+            "estado": producto.estado,
+            "id_usuario": producto.id_usuario,
+            "nombre_supervisor": supervisor.nombre if supervisor else None
+        }
+        productos_enriquecidos.append(producto_dict)
+    
+    return {
+        "total": data["total"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "productos": productos_enriquecidos
+    }
 
 
 @router.get("/productos/buscar")
@@ -81,17 +107,25 @@ def buscar_productos_endpoint(
     resultados = buscar_productos(db, nombre=nombre, categoria=categoria, id_usuario=id_usuario)
     if not resultados:
         return {"total": 0, "mensaje": "Sin resultados para los filtros aplicados."}
+    
+    # Enriquecer los resultados con el nombre del supervisor
+    resultados_enriquecidos = []
+    for p in resultados:
+        supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == p.id_usuario).first()
+        resultado_dict = {
+            "id": p.id_producto,
+            "nombre": p.nombre,
+            "categoria": p.categoria,
+            "unidad_tipo": p.unidad_tipo,
+            "unidad_cantidad": p.unidad_cantidad,
+            "id_usuario": p.id_usuario,
+            "nombre_supervisor": supervisor.nombre if supervisor else None
+        }
+        resultados_enriquecidos.append(resultado_dict)
+    
     return {
-        "total": len(resultados),
-        "resultados": [
-            {
-                "id": p.id_producto,
-                "nombre": p.nombre,
-                "categoria": p.categoria,
-                "unidad_tipo": p.unidad_tipo,
-                "unidad_cantidad": p.unidad_cantidad
-            } for p in resultados
-        ]
+        "total": len(resultados_enriquecidos),
+        "resultados": resultados_enriquecidos
     }
 
 
@@ -103,6 +137,10 @@ def obtener_producto_con_ubicacion(
     db_producto = get_producto_by_id(db, id_producto)
     if not db_producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    # Obtener información del supervisor
+    supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == db_producto.id_usuario).first()
+    
     punto = obtener_punto_por_producto(db, id_producto)
     punto_out = None
     if punto:
@@ -118,8 +156,22 @@ def obtener_producto_con_ubicacion(
                 unidad_cantidad=db_producto.unidad_cantidad
             )
         )
+    
+    # Crear objeto producto enriquecido con información del supervisor
+    producto_enriquecido = {
+        "id_producto": db_producto.id_producto,
+        "nombre": db_producto.nombre,
+        "categoria": db_producto.categoria,
+        "unidad_tipo": db_producto.unidad_tipo,
+        "unidad_cantidad": db_producto.unidad_cantidad,
+        "codigo_unico": db_producto.codigo_unico,
+        "estado": db_producto.estado,
+        "id_usuario": db_producto.id_usuario,
+        "nombre_supervisor": supervisor.nombre if supervisor else None
+    }
+    
     return {
-        "producto": db_producto,
+        "producto": producto_enriquecido,
         "ubicacion": punto_out
     }
 
@@ -131,20 +183,60 @@ def actualizar_producto(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    if current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
+    # Verificar permisos: administrador o supervisor propietario del producto
+    if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
         raise HTTPException(status_code=403, detail="No tienes permisos para editar productos")
+    
     db_producto = get_producto_by_id(db, id_producto)
     if not db_producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    # Si es supervisor, verificar que el producto le pertenece
+    if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value:
+        if db_producto.id_usuario != current_user.id_usuario:
+            raise HTTPException(
+                status_code=403, 
+                detail="Solo puedes editar productos que te pertenecen"
+            )
+        # Los supervisores no pueden cambiar el id_usuario (supervisor asignado)
+        if producto_update.id_usuario is not None and producto_update.id_usuario != current_user.id_usuario:
+            raise HTTPException(
+                status_code=403,
+                detail="Los supervisores no pueden reasignar productos a otros supervisores"
+            )
+    
+    # Si es administrador y se quiere cambiar id_usuario, validar que existe
+    if producto_update.id_usuario is not None:
+        nuevo_supervisor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == producto_update.id_usuario).first()
+        if not nuevo_supervisor:
+            raise HTTPException(
+                status_code=404,
+                detail="El supervisor especificado no existe"
+            )
+        # Verificar que el nuevo usuario sea supervisor
+        if nuevo_supervisor.rol.nombre_rol != RolEnum.SUPERVISOR.value:
+            raise HTTPException(
+                status_code=400,
+                detail="Solo se puede asignar productos a usuarios con rol de supervisor"
+            )
+    
     cambios = {}
     if producto_update.nombre is not None:
         cambios["nombre"] = producto_update.nombre
     if producto_update.categoria is not None:
         cambios["categoria"] = producto_update.categoria
-    if hasattr(producto_update, "codigo_unico") and producto_update.codigo_unico is not None:
+    if producto_update.codigo_unico is not None:
         cambios["codigo_unico"] = producto_update.codigo_unico
+    if producto_update.id_usuario is not None:
+        cambios["id_usuario"] = producto_update.id_usuario
+    if producto_update.unidad_tipo is not None:
+        cambios["unidad_tipo"] = producto_update.unidad_tipo
+    if producto_update.unidad_cantidad is not None:
+        cambios["unidad_cantidad"] = producto_update.unidad_cantidad
+    
     if not cambios:
         raise HTTPException(status_code=422, detail="No se proporcionaron campos válidos para actualizar")
+    
     try:
         db_producto = update_producto(db, db_producto, **cambios)
     except ValueError as e:

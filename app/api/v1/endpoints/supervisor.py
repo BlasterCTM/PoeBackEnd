@@ -304,3 +304,212 @@ async def desasignar_reponedor(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al desasignar reponedor: {str(e)}"
         )
+
+@router.get(
+    "/productos",
+    status_code=status.HTTP_200_OK,
+    description="Obtener todos los productos asociados al supervisor"
+)
+async def listar_productos_supervisor(
+    db: Annotated[Session, Depends(get_database)],
+    current_user: Annotated[Usuario, Depends(get_current_user)]
+):
+    """
+    Endpoint para que el supervisor visualice todos los productos que tiene asociados.
+    Incluye información del supervisor: ID, nombre, correo y rol.
+    """
+    # Verificar que el usuario sea supervisor
+    usuario_repo = UsuarioRepository()
+    rol_supervisor = usuario_repo.get_rol_by_nombre(db, RolEnum.SUPERVISOR.value)
+    
+    if current_user.rol_id != rol_supervisor.id_rol:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Solo los supervisores pueden acceder a este recurso"
+        )
+    
+    try:
+        from app.models.producto import Producto
+        
+        # Información del supervisor
+        supervisor_info = {
+            "id": current_user.id_usuario,
+            "nombre": current_user.nombre,
+            "correo": current_user.correo,
+            "rol": RolEnum.SUPERVISOR.value
+        }
+        
+        # Obtener productos asociados al supervisor
+        productos_asociados = db.query(Producto).filter(
+            Producto.id_usuario == current_user.id_usuario
+        ).all()
+        
+        # Formatear productos
+        productos_info = []
+        for producto in productos_asociados:
+            productos_info.append({
+                "id_producto": producto.id_producto,
+                "nombre": producto.nombre,
+                "categoria": producto.categoria,
+                "unidad_tipo": producto.unidad_tipo,
+                "unidad_cantidad": producto.unidad_cantidad
+            })
+        
+        return {
+            "supervisor": supervisor_info,
+            "total_productos": len(productos_info),
+            "productos": productos_info
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener los productos del supervisor: {str(e)}"
+        )
+
+@router.get(
+    "/productos/{id_producto}",
+    status_code=status.HTTP_200_OK,
+    description="Obtener un producto específico del supervisor"
+)
+async def obtener_producto_supervisor(
+    id_producto: int,
+    db: Annotated[Session, Depends(get_database)],
+    current_user: Annotated[Usuario, Depends(get_current_user)]
+):
+    """
+    Obtener detalles de un producto específico asociado al supervisor.
+    """
+    # Verificar que el usuario sea supervisor
+    usuario_repo = UsuarioRepository()
+    rol_supervisor = usuario_repo.get_rol_by_nombre(db, RolEnum.SUPERVISOR.value)
+    
+    if current_user.rol_id != rol_supervisor.id_rol:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Solo los supervisores pueden acceder a este recurso"
+        )
+    
+    try:
+        from app.models.producto import Producto
+        
+        # Obtener el producto verificando que pertenezca al supervisor
+        producto = db.query(Producto).filter(
+            Producto.id_producto == id_producto,
+            Producto.id_usuario == current_user.id_usuario
+        ).first()
+        
+        if not producto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Producto no encontrado o no tienes permisos para verlo"
+            )
+        
+        return {
+            "id_producto": producto.id_producto,
+            "nombre": producto.nombre,
+            "categoria": producto.categoria,
+            "unidad_tipo": producto.unidad_tipo,
+            "unidad_cantidad": producto.unidad_cantidad,
+            "supervisor": {
+                "id": current_user.id_usuario,
+                "nombre": current_user.nombre,
+                "correo": current_user.correo,
+                "rol": RolEnum.SUPERVISOR.value
+            }
+        }
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener el producto: {str(e)}"
+        )
+
+@router.put(
+    "/productos/{id_producto}",
+    status_code=status.HTTP_200_OK,
+    description="Editar un producto del supervisor"
+)
+async def editar_producto_supervisor(
+    id_producto: int,
+    producto_data: dict,
+    db: Annotated[Session, Depends(get_database)],
+    current_user: Annotated[Usuario, Depends(get_current_user)]
+):
+    """
+    Endpoint para que el supervisor pueda editar los productos que tiene asociados.
+    """
+    # Verificar que el usuario sea supervisor
+    usuario_repo = UsuarioRepository()
+    rol_supervisor = usuario_repo.get_rol_by_nombre(db, RolEnum.SUPERVISOR.value)
+    
+    if current_user.rol_id != rol_supervisor.id_rol:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Solo los supervisores pueden editar productos"
+        )
+    
+    try:
+        from app.models.producto import Producto
+        
+        # Verificar que el producto existe y pertenece al supervisor
+        producto = db.query(Producto).filter(
+            Producto.id_producto == id_producto,
+            Producto.id_usuario == current_user.id_usuario
+        ).first()
+        
+        if not producto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Producto no encontrado o no tienes permisos para editarlo"
+            )
+        
+        # Validar y actualizar campos
+        if "nombre" in producto_data and producto_data["nombre"]:
+            producto.nombre = producto_data["nombre"]
+        
+        if "categoria" in producto_data and producto_data["categoria"]:
+            producto.categoria = producto_data["categoria"]
+        
+        if "unidad_tipo" in producto_data and producto_data["unidad_tipo"]:
+            producto.unidad_tipo = producto_data["unidad_tipo"]
+        
+        if "unidad_cantidad" in producto_data and producto_data["unidad_cantidad"] is not None:
+            if producto_data["unidad_cantidad"] <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="La cantidad de unidad debe ser mayor a 0"
+                )
+            producto.unidad_cantidad = producto_data["unidad_cantidad"]
+        
+        # Guardar cambios
+        db.commit()
+        db.refresh(producto)
+        
+        return {
+            "mensaje": "Producto actualizado exitosamente",
+            "producto": {
+                "id_producto": producto.id_producto,
+                "nombre": producto.nombre,
+                "categoria": producto.categoria,
+                "unidad_tipo": producto.unidad_tipo,
+                "unidad_cantidad": producto.unidad_cantidad
+            },
+            "supervisor": {
+                "id": current_user.id_usuario,
+                "nombre": current_user.nombre,
+                "correo": current_user.correo,
+                "rol": RolEnum.SUPERVISOR.value
+            }
+        }
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al actualizar el producto: {str(e)}"
+        )

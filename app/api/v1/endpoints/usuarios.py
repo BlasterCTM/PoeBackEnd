@@ -460,3 +460,61 @@ async def obtener_perfil(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al obtener el perfil"
         )
+
+@router.get(
+    "/supervisores",
+    response_model=ListaUsuariosResponse,
+    status_code=status.HTTP_200_OK,
+    description="Listar todos los supervisores (requiere ser administrador)"
+)
+async def listar_supervisores(
+    nombre: Optional[str] = None,
+    db: Session = Depends(get_database),
+    current_user: Usuario = Depends(get_current_admin_user)
+):
+    """
+    Endpoint para que el administrador pueda listar todos los supervisores del sistema.
+    Permite filtrar por nombre y muestra información básica de cada supervisor.
+    """
+    try:
+        # Inicializar repositorio
+        usuario_repo = UsuarioRepository()
+        
+        # Obtener todos los supervisores
+        supervisores = usuario_repo.listar_usuarios(db, nombre, RolEnum.SUPERVISOR.value)
+        
+        if not supervisores:
+            return ListaUsuariosResponse(
+                total=0,
+                usuarios=[],
+                mensaje="No se encontraron supervisores" + (f" con el nombre '{nombre}'" if nombre else "")
+            )
+        
+        # Transformar los supervisores a su formato de salida
+        supervisores_response = []
+        for supervisor in supervisores:
+            rol_obj = usuario_repo.get_rol_by_id(db, supervisor.rol_id)
+            supervisores_response.append(
+                UsuarioOutListado(
+                    id_usuario=supervisor.id_usuario,
+                    nombre=supervisor.nombre,
+                    correo=supervisor.correo,
+                    rol=rol_obj.nombre_rol if rol_obj else "Sin rol",
+                    estado=supervisor.estado
+                )
+            )
+        
+        return ListaUsuariosResponse(
+            total=len(supervisores_response),
+            usuarios=supervisores_response,
+            mensaje="Supervisores listados exitosamente"
+        )
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error al listar supervisores: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al listar supervisores"
+        )
