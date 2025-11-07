@@ -21,9 +21,17 @@ def agregar_producto_a_detalle(db: Session, id_tarea: int, id_producto: int, can
         raise Exception("El producto no existe.")
     # Validar permisos
     if current_user.rol.nombre_rol.lower() == "supervisor":
-        supervision = db.query(Supervision).filter(Supervision.reponedor_id == tarea.id_reponedor, Supervision.supervisor_id == current_user.id_usuario).first()
-        if not supervision:
-            raise Exception("No tienes permisos para modificar esta tarea.")
+        # Validar que la tarea fue creada por este supervisor
+        if tarea.id_supervisor != current_user.id_usuario:
+            raise Exception("No tienes permisos para modificar esta tarea (no eres el supervisor asignado).")
+        # Si la tarea tiene reponedor asignado, validar supervisión
+        if tarea.id_reponedor is not None:
+            supervision = db.query(Supervision).filter(
+                Supervision.reponedor_id == tarea.id_reponedor, 
+                Supervision.supervisor_id == current_user.id_usuario
+            ).first()
+            if not supervision:
+                raise Exception("No tienes permisos para modificar esta tarea (el reponedor no está bajo tu supervisión).")
     elif current_user.rol.nombre_rol.lower() != "administrador":
         raise Exception("No tienes permisos para modificar tareas.")
     # Validar duplicado
@@ -46,9 +54,17 @@ def eliminar_producto_de_detalle(db: Session, id_tarea: int, id_producto: int, c
     if not tarea:
         raise Exception("La tarea no existe.")
     if current_user.rol.nombre_rol.lower() == "supervisor":
-        supervision = db.query(Supervision).filter(Supervision.reponedor_id == tarea.id_reponedor, Supervision.supervisor_id == current_user.id_usuario).first()
-        if not supervision:
-            raise Exception("No tienes permisos para modificar esta tarea.")
+        # Validar que la tarea fue creada por este supervisor
+        if tarea.id_supervisor != current_user.id_usuario:
+            raise Exception("No tienes permisos para modificar esta tarea (no eres el supervisor asignado).")
+        # Si la tarea tiene reponedor asignado, validar supervisión
+        if tarea.id_reponedor is not None:
+            supervision = db.query(Supervision).filter(
+                Supervision.reponedor_id == tarea.id_reponedor, 
+                Supervision.supervisor_id == current_user.id_usuario
+            ).first()
+            if not supervision:
+                raise Exception("No tienes permisos para modificar esta tarea (el reponedor no está bajo tu supervisión).")
     elif current_user.rol.nombre_rol.lower() != "administrador":
         raise Exception("No tienes permisos para modificar tareas.")
     db.delete(detalle)
@@ -61,9 +77,17 @@ def listar_detalle_tarea(db: Session, id_tarea: int, current_user: Usuario):
     if not tarea:
         raise Exception("La tarea no existe.")
     if current_user.rol.nombre_rol.lower() == "supervisor":
-        supervision = db.query(Supervision).filter(Supervision.reponedor_id == tarea.id_reponedor, Supervision.supervisor_id == current_user.id_usuario).first()
-        if not supervision:
-            raise Exception("No tienes permisos para ver esta tarea.")
+        # Validar que la tarea fue creada por este supervisor
+        if tarea.id_supervisor != current_user.id_usuario:
+            raise Exception("No tienes permisos para ver esta tarea (no eres el supervisor asignado).")
+        # Si la tarea tiene reponedor asignado, validar supervisión
+        if tarea.id_reponedor is not None:
+            supervision = db.query(Supervision).filter(
+                Supervision.reponedor_id == tarea.id_reponedor, 
+                Supervision.supervisor_id == current_user.id_usuario
+            ).first()
+            if not supervision:
+                raise Exception("No tienes permisos para ver esta tarea (el reponedor no está bajo tu supervisión).")
     elif current_user.rol.nombre_rol.lower() == "reponedor":
         if int(tarea.id_reponedor) != int(current_user.id_usuario):
             raise Exception("No tienes permisos para ver esta tarea.")

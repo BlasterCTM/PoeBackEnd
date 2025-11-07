@@ -9,16 +9,20 @@ class UsuarioRepository(BaseRepository[Usuario]):
     def __init__(self):
         super().__init__(Usuario)
     
-    def get_by_email(self, db: Session, email: str) -> Usuario:
-        return db.query(Usuario).filter(Usuario.correo == email).first()
+    def get_by_email(self, db: Session, email: str, id_empresa: int = None) -> Usuario:
+        query = db.query(Usuario).filter(Usuario.correo == email)
+        if id_empresa is not None:
+            query = query.filter(Usuario.id_empresa == id_empresa)
+        return query.first()
     
-    def create_usuario(self, db: Session, nombre: str, correo: str, contraseña: str, rol_id: int, estado: str = "activo") -> Usuario:
+    def create_usuario(self, db: Session, nombre: str, correo: str, contraseña: str, rol_id: int, id_empresa: int, estado: str = "activo") -> Usuario:
         hashed_password = get_password_hash(contraseña)
         db_usuario = Usuario(
             nombre=nombre,
             correo=correo,
             contraseña=hashed_password,
             rol_id=rol_id,
+            id_empresa=id_empresa,
             estado=estado
         )
         db.add(db_usuario)
@@ -31,12 +35,13 @@ class UsuarioRepository(BaseRepository[Usuario]):
 
     def listar_usuarios(
         self, 
-        db: Session, 
+        db: Session,
+        id_empresa: int,
         nombre: Optional[str] = None,
         rol: Optional[str] = None
     ) -> List[Usuario]:
-        # Iniciar la consulta base
-        query = db.query(Usuario).join(Rol)
+        # Iniciar la consulta base FILTRADA POR EMPRESA
+        query = db.query(Usuario).join(Rol).filter(Usuario.id_empresa == id_empresa)
         
         # Aplicar filtros si existen
         if nombre:

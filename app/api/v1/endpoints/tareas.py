@@ -10,6 +10,15 @@ from app.api.dependencies.auth import get_current_user
 # Definir el router principal después de los imports
 router = APIRouter()
 
+# Helper function para validar acceso a tarea
+def validar_acceso_tarea(tarea, current_user: Usuario):
+    """Valida que la tarea pertenezca a la empresa del usuario"""
+    if tarea.id_empresa != current_user.id_empresa:
+        raise HTTPException(
+            status_code=403, 
+            detail="No tienes acceso a esta tarea (pertenece a otra empresa)"
+        )
+
 @router.put("/detalles-tarea/{id_detalle}/completar", status_code=200)
 def completar_detalle_tarea(
     id_detalle: int,
@@ -285,12 +294,13 @@ def crear_tarea(
             raise HTTPException(status_code=422, detail="Los administradores deben proporcionar un ID de supervisor al crear una tarea.")
         id_supervisor = tarea_data.id_supervisor
 
-    # Crear la tarea principal
+    # Crear la tarea principal (CON id_empresa)
     tarea = Tarea(
         fecha_creacion=date.today(),
         estado_id=tarea_data.estado_id,
         id_supervisor=id_supervisor,
-        id_reponedor=tarea_data.id_reponedor
+        id_reponedor=tarea_data.id_reponedor,
+        id_empresa=current_user.id_empresa
     )
     db.add(tarea)
     db.commit()
@@ -356,7 +366,10 @@ def cambiar_estado_tarea(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    tarea = db.query(Tarea).filter(
+        Tarea.id_tarea == id_tarea,
+        Tarea.id_empresa == current_user.id_empresa
+    ).first()
     if not tarea:
         raise HTTPException(status_code=404, detail="Tarea no encontrada.")
 
@@ -495,11 +508,17 @@ def asignar_reponedor_a_tarea(
     }
 
 @router.get("/tareas/disponibles", response_model=list[TareaResponse])
-def listar_tareas_disponibles(db: Session = Depends(get_db)):
+def listar_tareas_disponibles(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
     # Estados considerados como "disponibles" (sin asignar o pendiente)
     estados_disponibles = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.in_(["sin asignar", "pendiente"]))
     ids_estados = [e.estado_id for e in estados_disponibles]
-    tareas = db.query(Tarea).filter(Tarea.estado_id.in_(ids_estados)).all()
+    tareas = db.query(Tarea).filter(
+        Tarea.estado_id.in_(ids_estados),
+        Tarea.id_empresa == current_user.id_empresa
+    ).all()
     
     # Enriquecer cada tarea con el nombre del supervisor
     tareas_enriquecidas = []
@@ -518,9 +537,15 @@ def listar_tareas_disponibles(db: Session = Depends(get_db)):
     return tareas_enriquecidas
 
 @router.get("/tareas/asignadas", response_model=list[TareaResponse])
-def listar_tareas_asignadas(db: Session = Depends(get_db)):
-    # Buscar tareas con reponedor asignado (id_reponedor no nulo)
-    tareas = db.query(Tarea).filter(Tarea.id_reponedor.isnot(None)).all()
+def listar_tareas_asignadas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Buscar tareas con reponedor asignado (id_reponedor no nulo) DE LA EMPRESA
+    tareas = db.query(Tarea).filter(
+        Tarea.id_reponedor.isnot(None),
+        Tarea.id_empresa == current_user.id_empresa
+    ).all()
     
     # Enriquecer cada tarea con el nombre del supervisor
     tareas_enriquecidas = []
@@ -539,9 +564,15 @@ def listar_tareas_asignadas(db: Session = Depends(get_db)):
     return tareas_enriquecidas
 
 @router.get("/tareas/no-asignadas", response_model=list[TareaResponse])
-def listar_tareas_no_asignadas(db: Session = Depends(get_db)):
-    # Buscar tareas sin reponedor asignado (id_reponedor es nulo)
-    tareas = db.query(Tarea).filter(Tarea.id_reponedor.is_(None)).all()
+def listar_tareas_no_asignadas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Buscar tareas sin reponedor asignado (id_reponedor es nulo) DE LA EMPRESA
+    tareas = db.query(Tarea).filter(
+        Tarea.id_reponedor.is_(None),
+        Tarea.id_empresa == current_user.id_empresa
+    ).all()
     
     # Enriquecer cada tarea con el nombre del supervisor
     tareas_enriquecidas = []
@@ -894,13 +925,14 @@ def detalle_tarea_reponedor(
 @router.get("/tareas/{id_tarea}/ruta-optimizada", response_model=dict)
 def optimizar_rutas_por_detalle_tarea(
     id_tarea: int,
-    algoritmo: str = Query("A*", description="Algoritmo a utilizar: 'A*', 'vecino_mas_cercano', etc."),
+    algoritmo: str = Query("vecino_mas_cercano", description="Algoritmo a utilizar: 'vecino_mas_cercano', 'fuerza_bruta', 'genetico'"),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     """
     Genera y almacena rutas optimizadas independientes para cada detalle_tarea de una tarea.
     Devuelve un JSON con todas las rutas optimizadas por producto.
+    Algoritmos disponibles: vecino_mas_cercano, fuerza_bruta, genetico
     """
     # 1. Validar tarea y permisos
     tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()

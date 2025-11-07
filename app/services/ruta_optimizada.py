@@ -408,7 +408,8 @@ def obtener_ruta_optimizada(
         fecha_generada=date.today(),
         algoritmo_usado=nombre_algoritmo,
         tiempo_estimado=tiempo_estimado,
-        distancia_total=distancia_total
+        distancia_total=distancia_total,
+        id_empresa=tarea.id_empresa
     )
     detalles_data = []
     for idx, punto in enumerate(orden_visita_puntos, start=1):

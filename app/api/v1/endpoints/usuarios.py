@@ -6,10 +6,11 @@ from app.api.dependencies.database import get_database
 from app.schemas.usuario import (
     UsuarioCreate, UsuarioResponse, Token, LoginSchema, 
     LoginResponse, ListaUsuariosResponse, UsuarioOutListado, 
-    UsuarioUpdate, UsuarioEstadoUpdate, UsuarioPerfilOut
+    UsuarioUpdate, UsuarioEstadoUpdate, UsuarioPerfilOut,
+    RefreshTokenRequest, RefreshTokenResponse
 )
 from app.repositories.usuario import UsuarioRepository
-from app.core.security.auth import create_access_token, get_current_admin_user, get_current_user
+from app.core.security.auth import create_access_token, create_refresh_token, verify_refresh_token, get_current_admin_user, get_current_user
 from app.core.security.password import verify_password
 from datetime import timedelta
 from app.core.config.settings import settings
@@ -37,11 +38,11 @@ async def crear_usuario(
     try:
         print(f"Intentando crear usuario: {usuario.nombre} con rol {usuario.rol.value}")
         
-        # Verificar si el correo ya existe
-        if usuario_repo.get_by_email(db, usuario.correo):
+        # Verificar si el correo ya existe EN LA MISMA EMPRESA
+        if usuario_repo.get_by_email(db, usuario.correo, current_user.id_empresa):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="El correo electrónico ya está registrado"
+                detail="El correo electrónico ya está registrado en esta empresa"
             )
 
         # Obtener el rol del usuario actual
@@ -77,13 +78,14 @@ async def crear_usuario(
                 detail=f"El rol {usuario.rol.value} no existe"
             )
         
-        # Crear el usuario
+        # Crear el usuario (heredando id_empresa del usuario autenticado)
         nuevo_usuario = usuario_repo.create_usuario(
             db=db,
             nombre=usuario.nombre,
             correo=usuario.correo,
             contraseña=usuario.contraseña,
-            rol_id=rol.id_rol
+            rol_id=rol.id_rol,
+            id_empresa=current_user.id_empresa
         )
         print(f"Usuario creado exitosamente con ID: {nuevo_usuario.id_usuario}")
         
@@ -135,7 +137,12 @@ async def login_for_access_token(
                 "detail": "La contraseña ingresada es incorrecta"
             }
         )
+    
+    # Crear access token (corta duración)
     access_token = create_access_token(data={"sub": usuario.correo})
+    
+    # Crear refresh token (larga duración)
+    refresh_token = create_refresh_token(data={"sub": usuario.correo})
     
     # Obtener el rol del usuario
     rol = usuario_repo.get_rol_by_id(db, usuario.rol_id)
@@ -156,8 +163,67 @@ async def login_for_access_token(
     
     return LoginResponse(
         access_token=access_token,
+        refresh_token=refresh_token,
         token_type="bearer",
-        user_info=user_info
+        user_info=user_info,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convertir minutos a segundos
+    )
+
+@router.post("/refresh", response_model=RefreshTokenResponse)
+async def refresh_access_token(
+    refresh_data: RefreshTokenRequest,
+    db: Session = Depends(get_database)
+):
+    """
+    Endpoint para renovar el access token usando un refresh token válido.
+    
+    El refresh token debe estar vigente (no expirado).
+    Retorna un nuevo access token de corta duración.
+    """
+    # Verificar el refresh token
+    email = verify_refresh_token(refresh_data.refresh_token)
+    
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error_type": "invalid_token",
+                "message": "Refresh token inválido o expirado",
+                "detail": "El refresh token proporcionado no es válido o ha expirado. Por favor, inicie sesión nuevamente."
+            }
+        )
+    
+    # Verificar que el usuario todavía existe y está activo
+    usuario_repo = UsuarioRepository()
+    usuario = usuario_repo.get_by_email(db, email)
+    
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error_type": "user_not_found",
+                "message": "Usuario no encontrado",
+                "detail": "El usuario asociado al token ya no existe."
+            }
+        )
+    
+    if usuario.estado != "activo":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error_type": "inactive_user",
+                "message": "Usuario inactivo",
+                "detail": "La cuenta ha sido desactivada. Contacte al administrador."
+            }
+        )
+    
+    # Generar nuevo access token
+    new_access_token = create_access_token(data={"sub": usuario.correo})
+    
+    return RefreshTokenResponse(
+        access_token=new_access_token,
+        token_type="bearer",
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
 @router.get(
@@ -201,8 +267,8 @@ async def listar_usuarios(
                 detail=f"Rol inválido. Roles permitidos: {', '.join([r.value for r in RolEnum])}"
             )
         
-        # Obtener usuarios
-        usuarios = usuario_repo.listar_usuarios(db, nombre, rol)
+        # Obtener usuarios (FILTRADOS POR LA EMPRESA DEL USUARIO ACTUAL)
+        usuarios = usuario_repo.listar_usuarios(db, current_user.id_empresa, nombre, rol)
         
         if not usuarios:
             return ListaUsuariosResponse(
@@ -480,8 +546,8 @@ async def listar_supervisores(
         # Inicializar repositorio
         usuario_repo = UsuarioRepository()
         
-        # Obtener todos los supervisores
-        supervisores = usuario_repo.listar_usuarios(db, nombre, RolEnum.SUPERVISOR.value)
+        # Obtener todos los supervisores (FILTRADOS POR EMPRESA)
+        supervisores = usuario_repo.listar_usuarios(db, current_user.id_empresa, nombre, RolEnum.SUPERVISOR.value)
         
         if not supervisores:
             return ListaUsuariosResponse(

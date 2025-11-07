@@ -45,6 +45,7 @@ class RutaOptimizadaCreate(RutaOptimizadaBase):
     id_reponedor: int
     id_tarea: int
     fecha_generada: date
+    id_empresa: int
 
 class RutaOptimizadaResponse(RutaOptimizadaBase):
     id_ruta: int

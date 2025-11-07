@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
 from app.core.database.database import Base
 
 class Mapa(Base):
@@ -8,3 +9,7 @@ class Mapa(Base):
     ancho = Column(Integer, nullable=False)
     alto = Column(Integer, nullable=False)
     activo = Column(Boolean, default=False)
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa", ondelete="CASCADE"), nullable=False)
+    
+    # Relaciones
+    empresa = relationship("Empresa", back_populates="mapas")

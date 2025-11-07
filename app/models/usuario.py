@@ -22,10 +22,12 @@ class Usuario(Base):
     
     id_usuario = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
-    correo = Column(String(100), unique=True, nullable=False, index=True)
+    correo = Column(String(100), nullable=False, index=True)
     contraseña = Column(String(255), nullable=False)
     rol_id = Column(Integer, ForeignKey("rol.id_rol"), nullable=False)
     estado = Column(String(20), default="activo")
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa", ondelete="CASCADE"), nullable=False)
     
     # Relaciones
     rol = relationship("Rol", back_populates="usuarios")
+    empresa = relationship("Empresa", back_populates="usuarios")

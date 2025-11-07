@@ -43,7 +43,13 @@ def crear_producto(
     # Generar código único si no se proporciona
     codigo_unico = producto.codigo_unico or str(uuid.uuid4())[:8].upper()
     try:
-        db_producto = create_producto(db, producto, id_usuario=producto.id_usuario, codigo_unico=codigo_unico)
+        db_producto = create_producto(
+            db, 
+            producto, 
+            id_usuario=producto.id_usuario, 
+            id_empresa=current_user.id_empresa,
+            codigo_unico=codigo_unico
+        )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return db_producto
@@ -60,11 +66,26 @@ def listar_productos(
 ):
     if not current_user:
         raise HTTPException(status_code=401, detail="No autenticado")
-    # Filtrar por id_usuario solo si es supervisor
+    # Filtrar por id_usuario solo si es supervisor Y por empresa
     if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value:
-        data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado, id_usuario=current_user.id_usuario)
+        data = get_productos(
+            db, 
+            id_empresa=current_user.id_empresa,
+            page=page, 
+            limit=limit, 
+            orden=orden, 
+            estado=estado, 
+            id_usuario=current_user.id_usuario
+        )
     else:
-        data = get_productos(db, page=page, limit=limit, orden=orden, estado=estado)
+        data = get_productos(
+            db, 
+            id_empresa=current_user.id_empresa,
+            page=page, 
+            limit=limit, 
+            orden=orden, 
+            estado=estado
+        )
     
     # Enriquecer los productos con el nombre del supervisor
     productos_enriquecidos = []
@@ -104,7 +125,13 @@ def buscar_productos_endpoint(
         raise HTTPException(status_code=403, detail="Solo administradores o supervisores pueden buscar productos.")
     # Filtrar por id_usuario solo si es supervisor
     id_usuario = current_user.id_usuario if current_user.rol.nombre_rol == RolEnum.SUPERVISOR.value else None
-    resultados = buscar_productos(db, nombre=nombre, categoria=categoria, id_usuario=id_usuario)
+    resultados = buscar_productos(
+        db, 
+        id_empresa=current_user.id_empresa,
+        nombre=nombre, 
+        categoria=categoria, 
+        id_usuario=id_usuario
+    )
     if not resultados:
         return {"total": 0, "mensaje": "Sin resultados para los filtros aplicados."}
     
@@ -132,9 +159,10 @@ def buscar_productos_endpoint(
 @router.get("/productos/{id_producto}")
 def obtener_producto_con_ubicacion(
     id_producto: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
 ):
-    db_producto = get_producto_by_id(db, id_producto)
+    db_producto = get_producto_by_id(db, id_producto, current_user.id_empresa)
     if not db_producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
@@ -187,7 +215,7 @@ def actualizar_producto(
     if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
         raise HTTPException(status_code=403, detail="No tienes permisos para editar productos")
     
-    db_producto = get_producto_by_id(db, id_producto)
+    db_producto = get_producto_by_id(db, id_producto, current_user.id_empresa)
     if not db_producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
@@ -252,7 +280,7 @@ def eliminar_producto(
 ):
     if current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
         raise HTTPException(status_code=403, detail="Solo administradores pueden eliminar productos.")
-    db_producto = get_producto_by_id(db, id_producto)
+    db_producto = get_producto_by_id(db, id_producto, current_user.id_empresa)
     if not db_producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     if producto_vinculado_a_tareas_activas(db, id_producto, ESTADOS_ACTIVOS):
@@ -301,7 +329,7 @@ def asignar_punto_a_producto(
     id_punto = body.get("id_punto")
     if not id_punto:
         raise HTTPException(status_code=422, detail="El campo id_punto es obligatorio.")
-    producto = get_producto_by_id(db, id_producto)
+    producto = get_producto_by_id(db, id_producto, current_user.id_empresa)
     if not producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
     try:
@@ -325,9 +353,10 @@ def asignar_punto_a_producto(
 @router.get("/productos/{id_producto}/ubicacion")
 def obtener_ubicacion_de_producto(
     id_producto: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
 ):
-    producto = get_producto_by_id(db, id_producto)
+    producto = get_producto_by_id(db, id_producto, current_user.id_empresa)
     if not producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
     punto = obtener_ubicacion_producto(db, id_producto)

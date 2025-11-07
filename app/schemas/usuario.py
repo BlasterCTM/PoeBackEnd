@@ -55,8 +55,18 @@ class UserInfo(BaseModel):
 
 class LoginResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
     user_info: UserInfo
+    expires_in: int = Field(default=3600, description="Tiempo de expiración del access_token en segundos")
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int = Field(default=3600, description="Tiempo de expiración del access_token en segundos")
 
 class AuthError(BaseModel):
     detail: str

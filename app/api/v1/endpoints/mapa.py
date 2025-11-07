@@ -398,19 +398,28 @@ def desasignar_producto_punto(
 @router.post("/mapas", status_code=201)
 def crear_mapa(
     body: dict = Body(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
 ):
     nombre = body.get("nombre")
     ancho = body.get("ancho")
     alto = body.get("alto")
     if not nombre or not isinstance(ancho, int) or not isinstance(alto, int) or ancho <= 0 or alto <= 0:
         raise HTTPException(status_code=422, detail="nombre, ancho y alto son requeridos y deben ser mayores a cero.")
-    # Validar duplicidad de nombre
-    existe = db.query(Mapa).filter(Mapa.nombre == nombre).first()
+    # Validar duplicidad de nombre EN LA MISMA EMPRESA
+    existe = db.query(Mapa).filter(
+        Mapa.nombre == nombre,
+        Mapa.id_empresa == current_user.id_empresa
+    ).first()
     if existe:
-        raise HTTPException(status_code=409, detail="Ya existe un mapa con ese nombre.")
+        raise HTTPException(status_code=409, detail="Ya existe un mapa con ese nombre en esta empresa.")
     try:
-        mapa = Mapa(nombre=nombre, ancho=ancho, alto=alto)
+        mapa = Mapa(
+            nombre=nombre, 
+            ancho=ancho, 
+            alto=alto,
+            id_empresa=current_user.id_empresa
+        )
         db.add(mapa)
         db.flush()  # Para obtener id_mapa
         ubicaciones = []

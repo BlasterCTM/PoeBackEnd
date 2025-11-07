@@ -8,6 +8,8 @@ from app.models.objeto_tipo import ObjetoTipo
 from app.models.ubicacion_fisica import UbicacionFisica
 from app.models.mapa import Mapa
 from app.models.punto_reposicion import PuntoReposicion
+from app.core.security.auth import get_current_user
+from app.models.usuario import Usuario
 
 router = APIRouter()
 
@@ -55,7 +57,8 @@ def listar_muebles_reposicion(db: Session = Depends(get_db)):
 @router.post("/muebles/reposicion", status_code=201)
 def crear_mueble_reposicion(
     body: dict = Body(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
 ):
     id_objeto = body.get("id_objeto")
     filas = body.get("filas")
@@ -64,16 +67,30 @@ def crear_mueble_reposicion(
         raise HTTPException(status_code=422, detail="id_objeto, filas y columnas son requeridos y deben ser mayores a cero.")
     try:
         # Iniciar transacción
-        mueble = MuebleReposicion(id_objeto=id_objeto, filas=filas, columnas=columnas)
+        mueble = MuebleReposicion(
+            id_objeto=id_objeto, 
+            filas=filas, 
+            columnas=columnas,
+            id_empresa=current_user.id_empresa
+        )
         db.add(mueble)
         db.flush()  # Para obtener id_mueble
         puntos = []
         for fila in range(1, filas+1):
             for columna in range(1, columnas+1):
                 # Validar duplicidad
-                existe = db.query(PuntoReposicion).filter_by(id_mueble=mueble.id_mueble, nivel=fila, estanteria=columna).first()
+                existe = db.query(PuntoReposicion).filter_by(
+                    id_mueble=mueble.id_mueble, 
+                    nivel=fila, 
+                    estanteria=columna
+                ).first()
                 if not existe:
-                    punto = PuntoReposicion(id_mueble=mueble.id_mueble, nivel=fila, estanteria=columna)
+                    punto = PuntoReposicion(
+                        id_mueble=mueble.id_mueble, 
+                        nivel=fila, 
+                        estanteria=columna,
+                        id_empresa=current_user.id_empresa
+                    )
                     db.add(punto)
                     puntos.append(punto)
         db.commit()
