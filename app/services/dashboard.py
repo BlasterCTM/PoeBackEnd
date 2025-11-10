@@ -3,13 +3,14 @@ from sqlalchemy import func, and_
 from app.models.tarea import Tarea
 from app.models.detalle_tarea import DetalleTarea
 from app.models.producto import Producto
-from app.models.usuario import Usuario
+from app.models.usuario import Usuario, RolEnum
+from typing import Optional
 
 class DashboardService:
     def __init__(self, db):
         self.db = db
 
-    def resumen(self, periodo: str = "dia", fecha_base: date = None):
+    def resumen(self, periodo: str = "dia", fecha_base: date = None, id_empresa: Optional[int] = None, es_superadmin: bool = False):
         if fecha_base is None:
             fecha_base = date.today()
 
@@ -30,8 +31,14 @@ class DashboardService:
             raise ValueError("Periodo no válido. Usa 'dia', 'semana' o 'mes'.")
 
         # Tareas por estado
+        query_tareas = self.db.query(Tarea.estado_id, func.count())
+        
+        # FILTRO MULTI-TENANT: Solo SuperAdmin puede ver todas las empresas
+        if not es_superadmin and id_empresa:
+            query_tareas = query_tareas.filter(Tarea.id_empresa == id_empresa)
+        
         tareas_estado = (
-            self.db.query(Tarea.estado_id, func.count())
+            query_tareas
             .filter(and_(func.date(Tarea.fecha_creacion) >= fecha_inicio, func.date(Tarea.fecha_creacion) <= fecha_fin))
             .group_by(Tarea.estado_id)
             .all()
@@ -44,10 +51,18 @@ class DashboardService:
             tareas["total"] += count
 
         # Top productos más repuestos
-        top_productos = (
+        query_productos = (
             self.db.query(Producto.nombre, func.sum(DetalleTarea.cantidad).label("cantidad_repuesta"))
             .join(DetalleTarea, DetalleTarea.id_producto == Producto.id_producto)
             .join(Tarea, Tarea.id_tarea == DetalleTarea.id_tarea)
+        )
+        
+        # FILTRO MULTI-TENANT: Solo SuperAdmin puede ver todas las empresas
+        if not es_superadmin and id_empresa:
+            query_productos = query_productos.filter(Producto.id_empresa == id_empresa)
+        
+        top_productos = (
+            query_productos
             .filter(and_(func.date(Tarea.fecha_creacion) >= fecha_inicio, func.date(Tarea.fecha_creacion) <= fecha_fin))
             .group_by(Producto.nombre)
             .order_by(func.sum(DetalleTarea.cantidad).desc())
@@ -57,13 +72,21 @@ class DashboardService:
         top_productos = [{"nombre": n, "cantidad_repuesta": c} for n, c in top_productos]
 
         # Actividad por usuario
-        actividad = (
+        query_actividad = (
             self.db.query(
                 Usuario.nombre,
                 func.count(Tarea.id_tarea).label("tareas_completadas"),
                 func.coalesce(func.sum(func.extract('epoch', Tarea.fecha_hora_completada - Tarea.fecha_creacion)) / 60, 0).label("tiempo_total_minutos")
             )
             .join(Tarea, Tarea.id_reponedor == Usuario.id_usuario)
+        )
+        
+        # FILTRO MULTI-TENANT: Solo SuperAdmin puede ver todas las empresas
+        if not es_superadmin and id_empresa:
+            query_actividad = query_actividad.filter(Usuario.id_empresa == id_empresa)
+        
+        actividad = (
+            query_actividad
             .filter(
                 and_(func.date(Tarea.fecha_creacion) >= fecha_inicio, func.date(Tarea.fecha_creacion) <= fecha_fin),
                 Tarea.estado_id == 3  # Completada

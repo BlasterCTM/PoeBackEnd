@@ -25,6 +25,7 @@ from app.models.objeto_mapa import ObjetoMapa
 from app.models.mueble_reposicion import MuebleReposicion
 from app.models.ubicacion_fisica import UbicacionFisica
 from app.schemas.mapa import PuntoReposicionOut, ProductoAsociado
+from app.utils.tenant import validate_tenant_access, is_super_admin
 
 router = APIRouter()
 

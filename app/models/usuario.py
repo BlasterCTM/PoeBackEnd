@@ -6,6 +6,7 @@ from app.core.database.database import Base
 from app.models.base import BaseModel
 
 class RolEnum(str, enum.Enum):
+    SUPERADMIN = "SuperAdmin"
     ADMINISTRADOR = "Administrador"
     SUPERVISOR = "Supervisor"
     REPONEDOR = "Reponedor"

@@ -36,8 +36,8 @@ async def obtener_puntos_mas_usados(
     - Solo accesible para administradores
     """
     try:
-        # Verificar que el usuario sea administrador
-        if current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
+        # Verificar que el usuario sea administrador o SuperAdmin
+        if current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERADMIN.value]:
             raise HTTPException(
                 status_code=403,
                 detail="Acceso denegado. Solo los administradores pueden acceder a este endpoint."
@@ -72,14 +72,19 @@ async def obtener_puntos_mas_usados(
                 detail="La fecha de inicio no puede ser mayor que la fecha de fin"
             )
         
-        # Obtener estadísticas
+        # Verificar si es SuperAdmin
+        es_superadmin = current_user.rol.nombre_rol == RolEnum.SUPERADMIN.value
+        
+        # Obtener estadísticas con filtro multi-tenant
         service = EstadisticasPuntosService(db)
         resultado = service.obtener_puntos_mas_usados(
             fecha_inicio=fecha_inicio_date,
             fecha_fin=fecha_fin_date,
             id_producto=id_producto,
             id_reponedor=id_reponedor,
-            limite=limite
+            limite=limite,
+            id_empresa=current_user.id_empresa,
+            es_superadmin=es_superadmin
         )
         
         logger.info(f"Estadísticas de puntos más usados obtenidas por administrador {current_user.id_usuario}")

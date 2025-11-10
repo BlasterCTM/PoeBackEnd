@@ -9,8 +9,12 @@ class Empresa(Base):
     
     id_empresa = Column(Integer, primary_key=True, index=True, autoincrement=True)
     nombre_empresa = Column(String(100), nullable=False)
-    rut_empresa = Column(String(20), unique=True)
+    rut_empresa = Column(String(20), unique=True, nullable=False)
     direccion = Column(String(255))
+    ciudad = Column(String(100))
+    region = Column(String(100))
+    telefono = Column(String(20))
+    email = Column(String(255))
     fecha_registro = Column(DateTime, default=datetime.utcnow)
     estado = Column(String(20), nullable=False, default="activo")
     
