@@ -26,4 +26,8 @@ class Empresa(Base):
     tareas = relationship("Tarea", back_populates="empresa", cascade="all, delete-orphan")
     rutas = relationship("RutaOptimizada", back_populates="empresa", cascade="all, delete-orphan")
     conversaciones_chat = relationship("ChatConversacion", back_populates="empresa", cascade="all, delete-orphan")
-    suscripcion = relationship("EmpresaSuscripcion", back_populates="empresa", uselist=False, cascade="all, delete-orphan")
+    
+    # Relaciones del módulo B2B
+    plan = relationship("PlanEmpresa", back_populates="empresa", uselist=False, cascade="all, delete-orphan")
+    facturas = relationship("Factura", back_populates="empresa", cascade="all, delete-orphan")
+    actividades = relationship("ActividadCliente", back_populates="empresa", cascade="all, delete-orphan")

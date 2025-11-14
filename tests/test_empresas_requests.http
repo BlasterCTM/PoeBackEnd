@@ -1,0 +1,159 @@
+### =============================================================
+### ENDPOINTS DE EMPRESAS - POE
+### Archivo de pruebas para REST Client (VS Code)
+### =============================================================
+
+### Variables
+@baseUrl = http://localhost:8000
+@adminToken = {{login.response.body.access_token}}
+
+### =============================================================
+### 1. LOGIN COMO ADMINISTRADOR
+### Primero necesitas hacer login para obtener el token
+### =============================================================
+# @name login
+POST {{baseUrl}}/usuarios/token
+Content-Type: application/x-www-form-urlencoded
+
+username=admin@poe.com&password=admin123
+
+
+### =============================================================
+### 2. REGISTRAR NUEVA EMPRESA + ADMINISTRADOR
+### Solo administradores pueden crear empresas
+### =============================================================
+POST {{baseUrl}}/empresas/registro
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "empresa": {
+    "nombre_empresa": "Supermercado Jumbo",
+    "rut_empresa": "76.123.456-7",
+    "direccion": "Av. Kennedy 9001, Las Condes",
+    "ciudad": "Santiago",
+    "region": "Región Metropolitana",
+    "telefono": "+56912345678",
+    "email": "contacto@jumbo.cl"
+  },
+  "admin_nombre": "María González",
+  "admin_correo": "mgonzalez@jumbo.cl",
+  "admin_contraseña": "Jumbo2025!"
+}
+
+
+### =============================================================
+### 3. LISTAR TODAS LAS EMPRESAS
+### Solo administradores pueden ver todas las empresas
+### =============================================================
+GET {{baseUrl}}/empresas/
+Authorization: Bearer {{adminToken}}
+
+
+### =============================================================
+### 4. LISTAR EMPRESAS CON PAGINACIÓN Y FILTROS
+### =============================================================
+GET {{baseUrl}}/empresas/?skip=0&limit=10&estado=activo
+Authorization: Bearer {{adminToken}}
+
+
+### =============================================================
+### 5. VER MI EMPRESA
+### Cualquier usuario autenticado puede ver su propia empresa
+### =============================================================
+GET {{baseUrl}}/empresas/mi-empresa
+Authorization: Bearer {{adminToken}}
+
+
+### =============================================================
+### 6. VER EMPRESA ESPECÍFICA POR ID
+### Reemplaza {id_empresa} con el ID real
+### =============================================================
+GET {{baseUrl}}/empresas/1
+Authorization: Bearer {{adminToken}}
+
+
+### =============================================================
+### 7. ACTUALIZAR DATOS DE EMPRESA
+### Solo el admin de la empresa puede modificar sus datos
+### =============================================================
+PATCH {{baseUrl}}/empresas/1
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "telefono": "+56912345679",
+  "email": "nuevo_contacto@jumbo.cl",
+  "direccion": "Nueva Dirección 123"
+}
+
+
+### =============================================================
+### 8. OBTENER ESTADÍSTICAS DE EMPRESAS
+### Solo administradores
+### =============================================================
+GET {{baseUrl}}/empresas/estadisticas/resumen
+Authorization: Bearer {{adminToken}}
+
+
+### =============================================================
+### 9. DESACTIVAR EMPRESA (SOFT DELETE)
+### Solo administradores globales
+### =============================================================
+DELETE {{baseUrl}}/empresas/2
+Authorization: Bearer {{adminToken}}
+
+
+### =============================================================
+### EJEMPLOS DE ERRORES ESPERADOS
+### =============================================================
+
+### Error: RUT duplicado
+POST {{baseUrl}}/empresas/registro
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "empresa": {
+    "nombre_empresa": "Otra Empresa",
+    "rut_empresa": "76.123.456-7",
+    "direccion": "Alguna Dirección",
+    "ciudad": "Santiago",
+    "region": "RM",
+    "telefono": "+56911111111",
+    "email": "test@test.cl"
+  },
+  "admin_nombre": "Test Admin",
+  "admin_correo": "testadmin@test.cl",
+  "admin_contraseña": "Test123!"
+}
+
+
+### Error: Email de admin duplicado
+POST {{baseUrl}}/empresas/registro
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "empresa": {
+    "nombre_empresa": "Empresa Nueva",
+    "rut_empresa": "77.999.888-K",
+    "direccion": "Alguna Dirección",
+    "ciudad": "Valparaíso",
+    "region": "Valparaíso",
+    "telefono": "+56922222222",
+    "email": "nueva@empresa.cl"
+  },
+  "admin_nombre": "Otro Admin",
+  "admin_correo": "mgonzalez@jumbo.cl",
+  "admin_contraseña": "Test123!"
+}
+
+
+### Error: Sin autenticación
+GET {{baseUrl}}/empresas/
+
+
+### Error: Ver empresa de otro tenant
+GET {{baseUrl}}/empresas/999
+Authorization: Bearer {{adminToken}}

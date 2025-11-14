@@ -1,0 +1,24 @@
+REPORTE COMPLETO - POE BACKEND MULTI-TENANT
+==================================================
+Fecha: 2025-11-10 17:45:58
+Duración: 2.42s
+Total: 8
+Exitosas: 4
+Fallidas: 4
+
+VALIDACIONES MULTI-TENANT:
+aislamiento_validado: 2
+acceso_cruzado_bloqueado: 0
+superadmin_acceso_total: 0
+
+PRUEBAS EXITOSAS:
+✓ Usuarios Empresa 1
+✓ Usuarios Empresa 3
+✓ Recordatorio seguridad
+✓ SuperAdmin acceso multi-empresa
+
+PRUEBAS FALLIDAS:
+✗ Login superadmin: 'module' object is not callable
+✗ Login admin_empresa2: 'module' object is not callable
+✗ Seguridad sin token: 'module' object is not callable
+✗ Seguridad token inválido: 'module' object is not callable

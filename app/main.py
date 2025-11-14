@@ -15,6 +15,7 @@ from app.core.database.database import get_db
 from fastapi.security import OAuth2PasswordBearer
 from app.core.database.init_data import init_estados_tarea
 from app.api.v1.endpoints import ruta, reporte, dashboard, resumen_semanal, estadisticas
+from app.api.v1.endpoints import cotizaciones, planes, facturas, actividades
 
 
 app = FastAPI(
@@ -58,6 +59,12 @@ app.include_router(reporte.router)
 app.include_router(dashboard.router)
 app.include_router(resumen_semanal.router, prefix="/reponedor", tags=["Resumen Semanal"])
 app.include_router(estadisticas.router, prefix="/admin/estadisticas", tags=["Estadísticas de Reposición"])
+
+# Routers del módulo B2B
+app.include_router(cotizaciones.router, prefix="/cotizaciones", tags=["Cotizaciones"])
+app.include_router(planes.router, prefix="/planes", tags=["Planes"])
+app.include_router(facturas.router, prefix="/facturas", tags=["Facturas"])
+app.include_router(actividades.router, prefix="/actividades", tags=["Actividades de Cliente"])
 
 # Inicializar la base de datos al arrancar la aplicación
 @app.on_event("startup")
