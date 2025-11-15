@@ -49,6 +49,19 @@ class PlanEmpresa(Base):
         "historial_dias": 90
     })
     
+    # Módulos habilitados/deshabilitados por el SuperAdmin
+    # Permite activar/desactivar funcionalidades específicas por cliente
+    modulos_habilitados = Column(JSONB, default={
+        "optimizacion_rutas": True,
+        "chat_supervisor": True,
+        "reportes_avanzados": True,
+        "dashboard_ejecutivo": True,
+        "multilocal": True,
+        "app_movil": False,
+        "integraciones_api": False,
+        "soporte_prioritario": False
+    })
+    
     # ============================================
     # FECHAS Y ESTADO
     # ============================================

@@ -19,8 +19,9 @@ class PlanEmpresaBase(BaseModel):
     # Pricing
     precio_mensual: int = Field(..., gt=0, description="Precio mensual en CLP")
     
-    # Features
+    # Features y módulos
     features: dict = Field(default_factory=dict, description="Funcionalidades habilitadas")
+    modulos_habilitados: Optional[dict] = Field(None, description="Módulos específicos habilitados por el SuperAdmin")
     
     # Fechas
     fecha_inicio: Optional[date] = Field(None, description="Fecha de inicio del plan")
@@ -45,6 +46,7 @@ class PlanEmpresaUpdate(BaseModel):
     
     precio_mensual: Optional[int] = Field(None, gt=0)
     features: Optional[dict] = None
+    modulos_habilitados: Optional[dict] = Field(None, description="Módulos específicos habilitados")
     
     fecha_vencimiento: Optional[date] = None
     activo: Optional[bool] = None

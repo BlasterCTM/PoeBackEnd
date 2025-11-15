@@ -118,7 +118,7 @@ def listar_cotizaciones_pendientes(
     return cotizacion_repo.get_pendientes(db)
 
 
-@router.get("/stats", response_model=CotizacionStats)
+@router.get("/estadisticas", response_model=CotizacionStats)
 def obtener_estadisticas_cotizaciones(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)

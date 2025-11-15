@@ -92,6 +92,40 @@ def listar_planes(
     return planes
 
 
+@router.get("/validar-limite", response_model=ValidacionLimite)
+def validar_limite_recurso(
+    recurso: str = Query(..., description="Tipo de recurso"),
+    cantidad: int = Query(..., description="Cantidad a validar"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    **USUARIO** - Valida si puede crear más recursos según su plan
+    
+    Ejemplo: Antes de crear un nuevo supervisor, validar si tiene espacio disponible.
+    """
+    if is_super_admin(current_user):
+        return ValidacionLimite(
+            recurso=recurso,
+            cantidad_actual=cantidad,
+            limite_plan=-1,
+            disponible=-1,
+            porcentaje_uso=0,
+            excedido=False
+        )
+    
+    plan_repo = PlanEmpresaRepository()
+    validacion = plan_repo.validar_limite(db, current_user.id_empresa, recurso, cantidad)
+    
+    if not validacion.get("valido"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=validacion.get("mensaje", "Límite excedido")
+        )
+    
+    return validacion
+
+
 @router.get("/{id_plan}", response_model=PlanEmpresaResponse)
 def obtener_plan(
     id_plan: int,
@@ -279,35 +313,4 @@ def upgrade_plan(
     return plan_actualizado
 
 
-@router.post("/validar-limite", response_model=ValidacionLimite)
-def validar_limite_recurso(
-    recurso: str = Query(..., description="Tipo de recurso"),
-    cantidad: int = Query(..., description="Cantidad a validar"),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    """
-    **USUARIO** - Valida si puede crear más recursos según su plan
-    
-    Ejemplo: Antes de crear un nuevo supervisor, validar si tiene espacio disponible.
-    """
-    if is_super_admin(current_user):
-        return ValidacionLimite(
-            recurso=recurso,
-            cantidad_actual=cantidad,
-            limite_plan=-1,
-            disponible=-1,
-            porcentaje_uso=0,
-            excedido=False
-        )
-    
-    plan_repo = PlanEmpresaRepository()
-    validacion = plan_repo.validar_limite(db, current_user.id_empresa, recurso, cantidad)
-    
-    if not validacion.get("valido"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=validacion.get("mensaje", "Límite excedido")
-        )
-    
-    return validacion
+

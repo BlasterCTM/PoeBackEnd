@@ -32,6 +32,9 @@ from app.models.metrica_optimizacion import MetricaOptimizacion
 from app.models.chat_conversacion import ChatConversacion
 from app.models.chat_mensaje import ChatMensaje
 
+# Importar modelo de auditoría (Backoffice)
+from app.models.log_auditoria import LogAuditoria
+
 __all__ = [
     'BaseModel', 'Empresa', 
     'PlanEmpresa', 'Cotizacion', 'Factura', 'ActividadCliente',
@@ -39,5 +42,5 @@ __all__ = [
     'UbicacionFisica', 'Producto', 'PuntoReposicion', 'MuebleReposicion',
     'Tarea', 'EstadoTarea', 'DetalleTarea', 'Supervision',
     'RutaOptimizada', 'DetalleRuta', 'PasoRuta', 'MetricaOptimizacion',
-    'ChatConversacion', 'ChatMensaje'
+    'ChatConversacion', 'ChatMensaje', 'LogAuditoria'
 ]
