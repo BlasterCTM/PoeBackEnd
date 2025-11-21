@@ -45,7 +45,6 @@ class PlanEmpresa(Base):
         "reportes_excel": False,
         "multilocal": True,
         "app_movil": False,
-        "chat_supervisor": True,
         "historial_dias": 90
     })
     
@@ -53,7 +52,6 @@ class PlanEmpresa(Base):
     # Permite activar/desactivar funcionalidades específicas por cliente
     modulos_habilitados = Column(JSONB, default={
         "optimizacion_rutas": True,
-        "chat_supervisor": True,
         "reportes_avanzados": True,
         "dashboard_ejecutivo": True,
         "multilocal": True,

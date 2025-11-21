@@ -157,7 +157,6 @@ class CalculadoraPreciosService:
             "dashboard": True,
             "optimizacion_rutas": True,
             "reportes_pdf": True,
-            "chat_supervisor": True,
             "notificaciones_email": True,
             "historial_dias": 90
         }

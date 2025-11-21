@@ -28,9 +28,8 @@ from app.models.detalle_ruta import DetalleRuta
 from app.models.paso_ruta import PasoRuta
 from app.models.metrica_optimizacion import MetricaOptimizacion
 
-# Importar modelos de chat
-from app.models.chat_conversacion import ChatConversacion
-from app.models.chat_mensaje import ChatMensaje
+# Importar modelo de predicción ML
+from app.models.prediccion_reposicion import PrediccionReposicion
 
 # Importar modelo de auditoría (Backoffice)
 from app.models.log_auditoria import LogAuditoria
@@ -42,5 +41,5 @@ __all__ = [
     'UbicacionFisica', 'Producto', 'PuntoReposicion', 'MuebleReposicion',
     'Tarea', 'EstadoTarea', 'DetalleTarea', 'Supervision',
     'RutaOptimizada', 'DetalleRuta', 'PasoRuta', 'MetricaOptimizacion',
-    'ChatConversacion', 'ChatMensaje', 'LogAuditoria'
+    'PrediccionReposicion', 'LogAuditoria'
 ]

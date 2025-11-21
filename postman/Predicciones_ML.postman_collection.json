@@ -1,0 +1,559 @@
+{
+	"info": {
+		"name": "POE - Predicciones ML",
+		"description": "Colección para probar endpoints de predicciones de reposición con Machine Learning",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Autenticación",
+			"item": [
+				{
+					"name": "Login Supervisor",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Guardar token automáticamente",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token\", jsonData.access_token);",
+									"    pm.environment.set(\"refresh_token\", jsonData.refresh_token);",
+									"    console.log(\"✅ Token guardado exitosamente\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"correo\": \"supervisor@empresa.com\",\n  \"contraseña\": \"tu_password_aqui\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/usuarios/token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"usuarios",
+								"token"
+							]
+						},
+						"description": "Login de supervisor o admin. El token se guarda automáticamente en la variable de entorno."
+					},
+					"response": []
+				},
+				{
+					"name": "Login Admin",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token\", jsonData.access_token);",
+									"    pm.environment.set(\"refresh_token\", jsonData.refresh_token);",
+									"    console.log(\"✅ Token guardado\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"correo\": \"admin@empresa.com\",\n  \"contraseña\": \"tu_password_aqui\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/usuarios/token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"usuarios",
+								"token"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Predicciones ML",
+			"item": [
+				{
+					"name": "Generar Predicción (Diciembre 2025)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test(\"Response has id_prediccion\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id_prediccion');",
+									"    pm.environment.set(\"last_prediccion_id\", jsonData.id_prediccion);",
+									"});",
+									"",
+									"pm.test(\"Response has resumen\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.resumen).to.have.property('total_unidades');",
+									"    pm.expect(jsonData.resumen).to.have.property('total_reposiciones');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mes\": 12,\n  \"anio\": 2025,\n  \"incluir_semanas\": true,\n  \"notas\": \"Predicción para temporada navideña\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/generar",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"generar"
+							]
+						},
+						"description": "Genera predicción ML para diciembre 2025 con agregación por semanas."
+					},
+					"response": []
+				},
+				{
+					"name": "Generar Predicción (Enero 2026)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mes\": 1,\n  \"anio\": 2026,\n  \"incluir_semanas\": true,\n  \"notas\": \"Predicción post-navidad\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/generar",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"generar"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Generar Predicción Sin Semanas",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mes\": 11,\n  \"anio\": 2025,\n  \"incluir_semanas\": false\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/generar",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"generar"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Obtener Historial (Todas)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has predicciones array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('predicciones');",
+									"    pm.expect(jsonData.predicciones).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/historial?skip=0&limit=20",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"historial"
+							],
+							"query": [
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						},
+						"description": "Obtiene historial paginado de predicciones de la empresa."
+					},
+					"response": []
+				},
+				{
+					"name": "Obtener Detalle por ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/{{last_prediccion_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"{{last_prediccion_id}}"
+							]
+						},
+						"description": "Obtiene detalles completos de una predicción específica. Usa el ID guardado de la última predicción generada."
+					},
+					"response": []
+				},
+				{
+					"name": "Actualizar Estado a Aplicado",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"estado\": \"aplicado\",\n  \"notas\": \"Aplicado en sistema de reposición automático el 21/11/2025\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/{{last_prediccion_id}}/estado",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"{{last_prediccion_id}}",
+								"estado"
+							]
+						},
+						"description": "Actualiza el estado de una predicción de 'pendiente' a 'aplicado'."
+					},
+					"response": []
+				},
+				{
+					"name": "Actualizar Estado a Rechazado",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"estado\": \"rechazado\",\n  \"notas\": \"Predicción descartada por cambios en inventario\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/{{last_prediccion_id}}/estado",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"{{last_prediccion_id}}",
+								"estado"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Tests de Validación",
+			"item": [
+				{
+					"name": "❌ Sin Token (401)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 401\", function () {",
+									"    pm.response.to.have.status(401);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/historial",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"historial"
+							]
+						},
+						"description": "Debe retornar 401 Unauthorized sin token."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Mes Inválido (422)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mes\": 13,\n  \"anio\": 2025,\n  \"incluir_semanas\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/generar",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"generar"
+							]
+						},
+						"description": "Debe retornar 422 porque mes=13 es inválido (debe ser 1-12)."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Predicción No Existe (404)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/predicciones/99999",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"predicciones",
+								"99999"
+							]
+						},
+						"description": "Debe retornar 404 Not Found (ID no existe)."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		}
+	]
+}
