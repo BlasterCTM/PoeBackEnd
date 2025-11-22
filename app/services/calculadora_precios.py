@@ -11,28 +11,24 @@ class CalculadoraPreciosService:
     
     IMPORTANTE: Los valores aquí son REFERENCIALES y deben ajustarse
     según la estrategia de pricing real del negocio.
+    
+    NOTA: El sistema gestiona 1 Empresa = 1 Supermercado.
     """
     
     # ============================================
     # CONFIGURACIÓN DE PRECIOS BASE (CLP)
     # ============================================
     
-    # Precio base mensual (fijo mínimo)
-    PRECIO_BASE_MENSUAL = 100000  # $100k CLP base
+    # Precio base mensual (fijo por supermercado)
+    PRECIO_BASE_MENSUAL = 150000  # $150k CLP base por supermercado
     
     # Costos por recurso
-    COSTO_POR_LOCAL = 30000        # $30k CLP por local
-    COSTO_POR_SUPERVISOR = 15000   # $15k CLP por supervisor
-    COSTO_POR_REPONEDOR = 8000     # $8k CLP por reponedor
+    COSTO_POR_SUPERVISOR = 20000   # $20k CLP por supervisor
+    COSTO_POR_REPONEDOR = 10000    # $10k CLP por reponedor
     
     # Costos opcionales
     COSTO_POR_1000_PRODUCTOS = 10000  # $10k CLP por cada 1000 productos
     COSTO_POR_100_PUNTOS = 5000       # $5k CLP por cada 100 puntos
-    
-    # Descuentos por volumen
-    DESCUENTO_10_LOCALES = 0.10    # 10% descuento si >= 10 locales
-    DESCUENTO_25_LOCALES = 0.15    # 15% descuento si >= 25 locales
-    DESCUENTO_50_LOCALES = 0.20    # 20% descuento si >= 50 locales
     
     # Descuento por pago anual
     DESCUENTO_ANUAL = 0.15         # 15% descuento en pago anual
@@ -40,7 +36,6 @@ class CalculadoraPreciosService:
     
     @staticmethod
     def calcular_precio_mensual(
-        cantidad_locales: int,
         cantidad_supervisores: int,
         cantidad_reponedores: int,
         cantidad_productos: Optional[int] = None,
@@ -50,7 +45,6 @@ class CalculadoraPreciosService:
         Calcula el precio mensual basado en parámetros.
         
         Args:
-            cantidad_locales: Cantidad de locales
             cantidad_supervisores: Cantidad de supervisores
             cantidad_reponedores: Cantidad de reponedores
             cantidad_productos: Cantidad de productos (opcional)
@@ -63,11 +57,10 @@ class CalculadoraPreciosService:
         subtotal = CalculadoraPreciosService.PRECIO_BASE_MENSUAL
         
         # Costos por recursos
-        costo_locales = cantidad_locales * CalculadoraPreciosService.COSTO_POR_LOCAL
         costo_supervisores = cantidad_supervisores * CalculadoraPreciosService.COSTO_POR_SUPERVISOR
         costo_reponedores = cantidad_reponedores * CalculadoraPreciosService.COSTO_POR_REPONEDOR
         
-        subtotal += costo_locales + costo_supervisores + costo_reponedores
+        subtotal += costo_supervisores + costo_reponedores
         
         # Costos opcionales
         costo_productos = 0
@@ -82,22 +75,8 @@ class CalculadoraPreciosService:
             costo_puntos = bloques_puntos * CalculadoraPreciosService.COSTO_POR_100_PUNTOS
             subtotal += costo_puntos
         
-        # Calcular descuento por volumen (basado en locales)
-        descuento_volumen = 0
-        porcentaje_descuento = 0
-        
-        if cantidad_locales >= 50:
-            porcentaje_descuento = CalculadoraPreciosService.DESCUENTO_50_LOCALES
-        elif cantidad_locales >= 25:
-            porcentaje_descuento = CalculadoraPreciosService.DESCUENTO_25_LOCALES
-        elif cantidad_locales >= 10:
-            porcentaje_descuento = CalculadoraPreciosService.DESCUENTO_10_LOCALES
-        
-        if porcentaje_descuento > 0:
-            descuento_volumen = int(subtotal * porcentaje_descuento)
-        
-        # Total mensual
-        total_mensual = subtotal - descuento_volumen
+        # Total mensual (sin descuentos por volumen)
+        total_mensual = subtotal
         
         # Total anual (con descuento adicional)
         total_anual_sin_descuento = total_mensual * 12
@@ -107,14 +86,11 @@ class CalculadoraPreciosService:
         return {
             "desglose": {
                 "precio_base": CalculadoraPreciosService.PRECIO_BASE_MENSUAL,
-                "costo_locales": costo_locales,
                 "costo_supervisores": costo_supervisores,
                 "costo_reponedores": costo_reponedores,
                 "costo_productos": costo_productos,
                 "costo_puntos": costo_puntos,
-                "subtotal": subtotal,
-                "descuento_volumen": descuento_volumen,
-                "porcentaje_descuento_volumen": int(porcentaje_descuento * 100)
+                "subtotal": subtotal
             },
             "precio_mensual": total_mensual,
             "precio_anual": {
@@ -124,7 +100,6 @@ class CalculadoraPreciosService:
                 "ahorro": descuento_anual
             },
             "parametros": {
-                "cantidad_locales": cantidad_locales,
                 "cantidad_supervisores": cantidad_supervisores,
                 "cantidad_reponedores": cantidad_reponedores,
                 "cantidad_productos": cantidad_productos,
@@ -135,7 +110,6 @@ class CalculadoraPreciosService:
     
     @staticmethod
     def sugerir_features(
-        cantidad_locales: int,
         cantidad_supervisores: int,
         cantidad_reponedores: int,
         integraciones: Optional[list] = None
@@ -144,7 +118,6 @@ class CalculadoraPreciosService:
         Sugiere features según el tamaño de la operación.
         
         Args:
-            cantidad_locales: Cantidad de locales
             cantidad_supervisores: Cantidad de supervisores
             cantidad_reponedores: Cantidad de reponedores
             integraciones: Lista de integraciones requeridas
@@ -161,25 +134,24 @@ class CalculadoraPreciosService:
             "historial_dias": 90
         }
         
-        # Plan pequeño (1-5 locales)
-        if cantidad_locales <= 5:
+        # Determinar tamaño de operación por cantidad de usuarios
+        total_usuarios = cantidad_supervisores + cantidad_reponedores
+        
+        # Operación pequeña (1-10 usuarios)
+        if total_usuarios <= 10:
             features.update({
                 "reportes_excel": False,
-                "multilocal": True,
                 "app_movil": False,
-                "soporte": "email_48h",
-                "dashboard_consolidado": False
+                "soporte": "email_48h"
             })
         
-        # Plan mediano (6-20 locales)
-        elif cantidad_locales <= 20:
+        # Operación mediana (11-30 usuarios)
+        elif total_usuarios <= 30:
             features.update({
                 "reportes_excel": True,
-                "multilocal": True,
                 "app_movil": True,
                 "soporte": "email_24h",
                 "soporte_telefonico": "horario_oficina",
-                "dashboard_consolidado": True,
                 "notificaciones_push": True,
                 "reportes_comparativos": True,
                 "metricas_avanzadas": True,
@@ -187,18 +159,14 @@ class CalculadoraPreciosService:
                 "historial_dias": 180
             })
         
-        # Plan grande (21+ locales)
+        # Operación grande (31+ usuarios)
         else:
             features.update({
                 "reportes_excel": True,
                 "reportes_personalizados": True,
-                "multilocal": True,
-                "multimarca": True,
                 "app_movil": True,
                 "soporte": "24x7",
                 "soporte_telefonico": "24x7",
-                "dashboard_consolidado": True,
-                "dashboard_corporativo": True,
                 "notificaciones_push": True,
                 "notificaciones_sms": True,
                 "reportes_comparativos": True,
@@ -224,7 +192,6 @@ class CalculadoraPreciosService:
     
     @staticmethod
     def generar_cotizacion_completa(
-        cantidad_locales: int,
         cantidad_supervisores: int,
         cantidad_reponedores: int,
         cantidad_productos: Optional[int] = None,
@@ -236,7 +203,6 @@ class CalculadoraPreciosService:
         Genera una cotización completa con precio y features sugeridos.
         
         Args:
-            cantidad_locales: Cantidad de locales
             cantidad_supervisores: Cantidad de supervisores
             cantidad_reponedores: Cantidad de reponedores
             cantidad_productos: Cantidad de productos
@@ -249,7 +215,6 @@ class CalculadoraPreciosService:
         """
         # Calcular precio
         pricing = CalculadoraPreciosService.calcular_precio_mensual(
-            cantidad_locales,
             cantidad_supervisores,
             cantidad_reponedores,
             cantidad_productos,
@@ -258,7 +223,6 @@ class CalculadoraPreciosService:
         
         # Sugerir features
         features = CalculadoraPreciosService.sugerir_features(
-            cantidad_locales,
             cantidad_supervisores,
             cantidad_reponedores,
             integraciones
@@ -286,17 +250,5 @@ class CalculadoraPreciosService:
             "precio_info": precio_info,
             "desglose": pricing["desglose"],
             "features_sugeridos": features,
-            "parametros": pricing["parametros"],
-            "recomendacion": CalculadoraPreciosService._generar_recomendacion(cantidad_locales)
+            "parametros": pricing["parametros"]
         }
-    
-    
-    @staticmethod
-    def _generar_recomendacion(cantidad_locales: int) -> str:
-        """Genera recomendación según el tamaño"""
-        if cantidad_locales <= 5:
-            return "Plan recomendado para operaciones pequeñas. Incluye todas las funcionalidades esenciales."
-        elif cantidad_locales <= 20:
-            return "Plan profesional con analytics avanzados y soporte prioritario."
-        else:
-            return "Plan enterprise con todas las funcionalidades, soporte 24/7 y gestor de cuenta dedicado."

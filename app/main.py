@@ -17,6 +17,7 @@ from app.core.database.init_data import init_estados_tarea
 from app.api.v1.endpoints import ruta, reporte, dashboard, resumen_semanal, estadisticas
 from app.api.v1.endpoints import cotizaciones, planes, facturas, actividades, backoffice
 from app.api.v1.endpoints import predicciones  # Módulo ML
+from app.api.v1.endpoints import auditoria  # Módulo de Auditoría
 
 
 app = FastAPI(
@@ -69,6 +70,9 @@ app.include_router(actividades.router, prefix="/actividades", tags=["Actividades
 
 # Router del módulo Backoffice/SuperAdmin
 app.include_router(backoffice.router, prefix="/backoffice", tags=["Backoffice"])
+
+# Router del módulo de Auditoría
+app.include_router(auditoria.router, prefix="/auditoria", tags=["Auditoría"])
 
 # Router del módulo ML/Predicciones
 app.include_router(predicciones.router, prefix="/api/v1", tags=["Predicciones ML"])

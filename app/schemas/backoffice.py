@@ -92,7 +92,6 @@ class PlanEmpresaBackoffice(BaseModel):
     nombre_empresa: str
     
     # Límites del plan
-    cantidad_locales: int
     cantidad_supervisores: int
     cantidad_reponedores: int
     cantidad_puntos_reposicion: int

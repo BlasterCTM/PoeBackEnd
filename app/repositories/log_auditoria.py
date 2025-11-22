@@ -187,3 +187,70 @@ class LogAuditoriaRepository:
         
         db.commit()
         return resultado
+    
+    def listar_con_filtros(
+        self,
+        db: Session,
+        filtros: LogAuditoriaFiltros,
+        skip: int = 0,
+        limit: int = 50
+    ) -> List[LogAuditoria]:
+        """
+        Lista logs aplicando filtros con paginación
+        
+        Args:
+            db: Sesión de base de datos
+            filtros: Filtros a aplicar
+            skip: Registros a saltar
+            limit: Límite de registros
+            
+        Returns:
+            Lista de logs
+        """
+        query = db.query(LogAuditoria)
+        
+        # Aplicar filtros
+        if filtros.id_usuario:
+            query = query.filter(LogAuditoria.id_usuario == filtros.id_usuario)
+        
+        if filtros.accion:
+            query = query.filter(LogAuditoria.accion == filtros.accion)
+        
+        if filtros.entidad:
+            query = query.filter(LogAuditoria.entidad == filtros.entidad)
+        
+        if filtros.id_entidad:
+            query = query.filter(LogAuditoria.id_entidad == filtros.id_entidad)
+        
+        if filtros.fecha_desde:
+            # Convertir date a datetime
+            fecha_desde_dt = datetime.combine(filtros.fecha_desde, datetime.min.time())
+            query = query.filter(LogAuditoria.fecha >= fecha_desde_dt)
+        
+        if filtros.fecha_hasta:
+            # Convertir date a datetime y agregar 1 día para incluir todo el día
+            fecha_hasta_dt = datetime.combine(filtros.fecha_hasta, datetime.max.time())
+            query = query.filter(LogAuditoria.fecha <= fecha_hasta_dt)
+        
+        # Ordenar y paginar
+        logs = query.order_by(desc(LogAuditoria.fecha)).offset(skip).limit(limit).all()
+        
+        return logs
+    
+    def listar_acciones_unicas(self, db: Session) -> List[str]:
+        """
+        Lista todas las acciones únicas registradas
+        
+        Útil para autocompletar filtros en UI
+        """
+        result = db.query(LogAuditoria.accion).distinct().order_by(LogAuditoria.accion).all()
+        return [row[0] for row in result]
+    
+    def listar_entidades_unicas(self, db: Session) -> List[str]:
+        """
+        Lista todas las entidades únicas registradas
+        
+        Útil para autocompletar filtros en UI
+        """
+        result = db.query(LogAuditoria.entidad).distinct().order_by(LogAuditoria.entidad).all()
+        return [row[0] for row in result]

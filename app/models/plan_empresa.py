@@ -22,7 +22,6 @@ class PlanEmpresa(Base):
     # ============================================
     # PARÁMETROS CONFIGURABLES
     # ============================================
-    cantidad_locales = Column(Integer, nullable=False)
     cantidad_supervisores = Column(Integer, nullable=False)
     cantidad_reponedores = Column(Integer, nullable=False)
     
@@ -43,8 +42,8 @@ class PlanEmpresa(Base):
         "optimizacion_rutas": True,
         "reportes_pdf": True,
         "reportes_excel": False,
-        "multilocal": True,
         "app_movil": False,
+        "chat_supervisor": True,
         "historial_dias": 90
     })
     
@@ -54,8 +53,8 @@ class PlanEmpresa(Base):
         "optimizacion_rutas": True,
         "reportes_avanzados": True,
         "dashboard_ejecutivo": True,
-        "multilocal": True,
         "app_movil": False,
+        "chat_supervisor": True,
         "integraciones_api": False,
         "soporte_prioritario": False
     })
@@ -84,7 +83,7 @@ class PlanEmpresa(Base):
     # Constraints
     __table_args__ = (
         CheckConstraint(
-            'cantidad_locales > 0 AND cantidad_supervisores > 0 AND cantidad_reponedores > 0 AND precio_mensual > 0',
+            'cantidad_supervisores > 0 AND cantidad_reponedores > 0 AND precio_mensual > 0',
             name='plan_empresa_cantidad_check'
         ),
     )

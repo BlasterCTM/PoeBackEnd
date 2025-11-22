@@ -35,8 +35,6 @@ class CotizacionBase(BaseModel):
     cargo: Optional[str] = Field(None, max_length=100, description="Cargo del contacto")
     
     # Parámetros solicitados
-    cantidad_locales: int = Field(..., gt=0, description="Cantidad de locales")
-    ciudades: Optional[str] = Field(None, description="Ciudades donde operan (JSON array)")
     cantidad_supervisores: int = Field(..., gt=0, description="Cantidad de supervisores")
     cantidad_reponedores: int = Field(..., gt=0, description="Cantidad de reponedores")
     
@@ -98,7 +96,6 @@ class CotizacionListItem(BaseModel):
     nombre_contacto: str
     empresa: str
     email: str
-    cantidad_locales: int
     cantidad_supervisores: int
     cantidad_reponedores: int
     precio_final: Optional[int]
@@ -128,7 +125,6 @@ class CotizacionConvertir(BaseModel):
     admin_contraseña: str = Field(..., min_length=8)
     
     # Parámetros del plan (pueden diferir de la cotización)
-    cantidad_locales: int = Field(..., gt=0)
     cantidad_supervisores: int = Field(..., gt=0)
     cantidad_reponedores: int = Field(..., gt=0)
     cantidad_productos: Optional[int] = Field(None, gt=0)

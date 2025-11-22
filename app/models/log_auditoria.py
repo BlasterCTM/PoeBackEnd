@@ -1,5 +1,5 @@
 """
-Modelo de Log de Auditoría para rastrear acciones del SuperAdmin
+Modelo de Log de Auditoría para rastrear TODAS las acciones de TODOS los usuarios del sistema
 """
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -10,15 +10,23 @@ from app.models.base import Base
 
 class LogAuditoria(Base):
     """
-    Registro de auditoría para todas las acciones administrativas
+    Registro de auditoría para TODAS las acciones de TODOS los usuarios
+    
+    Este sistema registra automáticamente:
+    - ✅ Acciones de SuperAdmin (gestión de empresas, planes, cotizaciones)
+    - ✅ Acciones de Administradores (gestión de usuarios, configuración)
+    - ✅ Acciones de Supervisores (gestión de tareas, rutas)
+    - ✅ Acciones de Reponedores (completar tareas, reportes)
     
     Almacena:
-    - Quién realizó la acción
-    - Qué acción se realizó
-    - Sobre qué entidad
-    - Datos antes y después del cambio
-    - IP de origen
-    - Timestamp
+    - Quién realizó la acción (usuario + rol)
+    - Qué acción se realizó (crear, modificar, eliminar)
+    - Sobre qué entidad (empresa, tarea, producto, etc.)
+    - Datos antes y después del cambio (JSONB)
+    - IP de origen y User-Agent
+    - Timestamp exacto
+    
+    Consulta: SuperAdmin puede ver TODOS los logs de TODOS los usuarios
     """
     __tablename__ = "log_auditoria"
     

@@ -295,9 +295,6 @@ def upgrade_plan(
         "notas": f"{plan.notas or ''}\n\nUpgrade: {upgrade_data.motivo}"
     }
     
-    if upgrade_data.nueva_cantidad_locales:
-        update_data["cantidad_locales"] = upgrade_data.nueva_cantidad_locales
-    
     if upgrade_data.nueva_cantidad_supervisores:
         update_data["cantidad_supervisores"] = upgrade_data.nueva_cantidad_supervisores
     

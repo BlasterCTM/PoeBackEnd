@@ -27,8 +27,6 @@ class Cotizacion(Base):
     # ============================================
     # PARÁMETROS SOLICITADOS
     # ============================================
-    cantidad_locales = Column(Integer, nullable=False)
-    ciudades = Column(Text)  # JSON array: ["Santiago", "Valparaíso"]
     cantidad_supervisores = Column(Integer, nullable=False)
     cantidad_reponedores = Column(Integer, nullable=False)
     

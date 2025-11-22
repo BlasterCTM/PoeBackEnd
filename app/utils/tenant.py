@@ -250,7 +250,6 @@ def obtener_info_plan(db: Session, current_user: Usuario) -> Dict[str, Any]:
     
     return {
         "activo": plan.activo,
-        "cantidad_locales": plan.cantidad_locales,
         "cantidad_supervisores": plan.cantidad_supervisores,
         "cantidad_reponedores": plan.cantidad_reponedores,
         "precio_mensual": plan.precio_mensual,

@@ -88,7 +88,6 @@ class PlanEmpresaRepository(BaseRepository[PlanEmpresa]):
         
         # Mapeo de recursos a campos del plan
         campo_map = {
-            "locales": "cantidad_locales",
             "supervisores": "cantidad_supervisores",
             "reponedores": "cantidad_reponedores",
             "productos": "cantidad_productos",

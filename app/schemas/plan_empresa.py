@@ -10,7 +10,6 @@ from datetime import date, datetime
 class PlanEmpresaBase(BaseModel):
     """Schema base para plan de empresa"""
     # Parámetros configurables
-    cantidad_locales: int = Field(..., gt=0, description="Cantidad de locales")
     cantidad_supervisores: int = Field(..., gt=0, description="Cantidad de supervisores")
     cantidad_reponedores: int = Field(..., gt=0, description="Cantidad de reponedores")
     cantidad_productos: Optional[int] = Field(None, gt=0, description="Cantidad de productos")
@@ -38,7 +37,6 @@ class PlanEmpresaCreate(PlanEmpresaBase):
 
 class PlanEmpresaUpdate(BaseModel):
     """Schema para actualizar plan de empresa"""
-    cantidad_locales: Optional[int] = Field(None, gt=0)
     cantidad_supervisores: Optional[int] = Field(None, gt=0)
     cantidad_reponedores: Optional[int] = Field(None, gt=0)
     cantidad_productos: Optional[int] = Field(None, gt=0)
@@ -84,7 +82,6 @@ class ValidacionLimite(BaseModel):
 
 class PlanEmpresaConLimites(PlanEmpresaResponse):
     """Schema de plan con información de uso de límites"""
-    uso_locales: Optional[int] = Field(None, description="Cantidad actual de locales")
     uso_supervisores: Optional[int] = Field(None, description="Cantidad actual de supervisores")
     uso_reponedores: Optional[int] = Field(None, description="Cantidad actual de reponedores")
     uso_productos: Optional[int] = Field(None, description="Cantidad actual de productos")
@@ -100,7 +97,6 @@ class PlanEmpresaConLimites(PlanEmpresaResponse):
 
 class PlanEmpresaUpgrade(BaseModel):
     """Schema para upgrade de plan"""
-    nueva_cantidad_locales: Optional[int] = Field(None, gt=0)
     nueva_cantidad_supervisores: Optional[int] = Field(None, gt=0)
     nueva_cantidad_reponedores: Optional[int] = Field(None, gt=0)
     

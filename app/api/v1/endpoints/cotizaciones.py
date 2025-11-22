@@ -46,7 +46,6 @@ def solicitar_cotizacion(
     # Calcular precio sugerido automáticamente
     calculadora = CalculadoraPreciosService()
     cotizacion_calculada = calculadora.generar_cotizacion_completa(
-        cantidad_locales=cotizacion.cantidad_locales,
         cantidad_supervisores=cotizacion.cantidad_supervisores,
         cantidad_reponedores=cotizacion.cantidad_reponedores,
         cantidad_productos=cotizacion.cantidad_productos,
@@ -295,7 +294,6 @@ def convertir_cotizacion_en_cliente(
         # 2. Crear plan personalizado
         plan_data = {
             "id_empresa": nueva_empresa.id_empresa,
-            "cantidad_locales": conversion_data.cantidad_locales,
             "cantidad_supervisores": conversion_data.cantidad_supervisores,
             "cantidad_reponedores": conversion_data.cantidad_reponedores,
             "cantidad_productos": conversion_data.cantidad_productos,
@@ -350,8 +348,7 @@ def convertir_cotizacion_en_cliente(
             },
             plan={
                 "id_plan": nuevo_plan.id_plan,
-                "precio_mensual": nuevo_plan.precio_mensual,
-                "cantidad_locales": nuevo_plan.cantidad_locales
+                "precio_mensual": nuevo_plan.precio_mensual
             },
             admin={
                 "id_usuario": nuevo_admin.id_usuario,
