@@ -28,7 +28,21 @@ def visualizar_mapa_reposicion(
     if not current_user or current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
         raise HTTPException(status_code=403, detail="Solo administradores pueden consultar el mapeado de reposición.")
     # Seleccionar el mapa
-    mapa = db.query(Mapa).first() if id_mapa is None else db.query(Mapa).filter(Mapa.id_mapa == id_mapa).first()
+    # Selección de mapa filtrando SIEMPRE por empresa del usuario
+    if id_mapa is None:
+        mapa = db.query(Mapa).filter(
+            Mapa.id_empresa == current_user.id_empresa,
+            Mapa.activo == True
+        ).first()
+        if not mapa:
+            mapa = db.query(Mapa).filter(
+                Mapa.id_empresa == current_user.id_empresa
+            ).first()
+    else:
+        mapa = db.query(Mapa).filter(
+            Mapa.id_mapa == id_mapa,
+            Mapa.id_empresa == current_user.id_empresa
+        ).first()
     if not mapa:
         return {"mensaje": "No hay mapas registrados.", "mapa": None, "ubicaciones": []}
     ubicaciones_db = db.query(UbicacionFisica).filter(UbicacionFisica.id_mapa == mapa.id_mapa).all()
@@ -203,10 +217,11 @@ def vista_puntos_supervisor(
     puntos_ids_asignados = set(puntos_usuario_ids + puntos_reponedores_ids)
 
     # Obtener todos los puntos del mapa del supervisor
-    # Primero, obtener el mapa asociado a los puntos asignados (si no hay, devolver mensaje)
+    # Primero, obtener un punto asignado
     primer_punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto.in_(list(puntos_ids_asignados))).first()
     if not primer_punto:
         return {"mensaje": "No tienes puntos de reposición asignados actualmente."}
+    # Validar empresa en toda la cadena
     mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == primer_punto.id_mueble).first()
     if not mueble:
         return {"mensaje": "No se encontró el mueble asociado a tus puntos."}
@@ -216,9 +231,12 @@ def vista_puntos_supervisor(
     ubicacion = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).first()
     if not ubicacion:
         return {"mensaje": "No se encontró la ubicación asociada al objeto."}
-    mapa = db.query(Mapa).filter(Mapa.id_mapa == ubicacion.id_mapa).first()
+    mapa = db.query(Mapa).filter(
+        Mapa.id_mapa == ubicacion.id_mapa,
+        Mapa.id_empresa == current_user.id_empresa
+    ).first()
     if not mapa:
-        return {"mensaje": "No se encontró el mapa asociado a tus puntos."}
+        return {"mensaje": "No se encontró el mapa asociado a tus puntos en tu empresa."}
 
     # Obtener todos los puntos del mapa
     muebles = db.query(MuebleReposicion).all()
@@ -486,7 +504,21 @@ def visualizar_mapa_supervisor(
     puntos_ids_permitidos = set(puntos_usuario_ids + puntos_reponedores_ids)
 
     # Seleccionar el mapa
-    mapa = db.query(Mapa).first() if id_mapa is None else db.query(Mapa).filter(Mapa.id_mapa == id_mapa).first()
+    # Selección de mapa filtrando SIEMPRE por empresa del usuario
+    if id_mapa is None:
+        mapa = db.query(Mapa).filter(
+            Mapa.id_empresa == current_user.id_empresa,
+            Mapa.activo == True
+        ).first()
+        if not mapa:
+            mapa = db.query(Mapa).filter(
+                Mapa.id_empresa == current_user.id_empresa
+            ).first()
+    else:
+        mapa = db.query(Mapa).filter(
+            Mapa.id_mapa == id_mapa,
+            Mapa.id_empresa == current_user.id_empresa
+        ).first()
     if not mapa:
         return {"mensaje": "No hay mapas registrados.", "mapa": None, "ubicaciones": []}
     ubicaciones_db = db.query(UbicacionFisica).filter(UbicacionFisica.id_mapa == mapa.id_mapa).all()
@@ -557,7 +589,21 @@ def visualizar_mapa_reponedor(
     puntos_ids_permitidos = set([p[0] for p in puntos_usuario])
 
     # Seleccionar el mapa
-    mapa = db.query(Mapa).first() if id_mapa is None else db.query(Mapa).filter(Mapa.id_mapa == id_mapa).first()
+    # Selección de mapa filtrando SIEMPRE por empresa del usuario
+    if id_mapa is None:
+        mapa = db.query(Mapa).filter(
+            Mapa.id_empresa == current_user.id_empresa,
+            Mapa.activo == True
+        ).first()
+        if not mapa:
+            mapa = db.query(Mapa).filter(
+                Mapa.id_empresa == current_user.id_empresa
+            ).first()
+    else:
+        mapa = db.query(Mapa).filter(
+            Mapa.id_mapa == id_mapa,
+            Mapa.id_empresa == current_user.id_empresa
+        ).first()
     if not mapa:
         return {"mensaje": "No hay mapas registrados.", "mapa": None, "ubicaciones": []}
     ubicaciones_db = db.query(UbicacionFisica).filter(UbicacionFisica.id_mapa == mapa.id_mapa).all()
@@ -659,7 +705,10 @@ def obtener_mapa_activo(
     if not current_user or current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
         raise HTTPException(status_code=403, detail="Solo administradores pueden consultar el mapa activo.")
     
-    mapa_activo = db.query(Mapa).filter(Mapa.activo == True).first()
+    mapa_activo = db.query(Mapa).filter(
+        Mapa.activo == True,
+        Mapa.id_empresa == current_user.id_empresa
+    ).first()
     
     if not mapa_activo:
         return {
