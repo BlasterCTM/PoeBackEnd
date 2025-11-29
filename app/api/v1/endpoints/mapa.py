@@ -96,7 +96,24 @@ def vista_grafica_mapa(
 ):
     if not current_user or current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
         raise HTTPException(status_code=403, detail="Solo administradores pueden consultar la vista gráfica del mapa.")
-    mapa = db.query(Mapa).first() if id_mapa is None else db.query(Mapa).filter(Mapa.id_mapa == id_mapa).first()
+    # Selección de mapa filtrando SIEMPRE por empresa del usuario
+    if id_mapa is None:
+        # Buscar primero el mapa activo de la empresa del usuario
+        mapa = db.query(Mapa).filter(
+            Mapa.id_empresa == current_user.id_empresa,
+            Mapa.activo == True
+        ).first()
+        # Fallback: si no hay activo, tomar el primero de su empresa
+        if not mapa:
+            mapa = db.query(Mapa).filter(
+                Mapa.id_empresa == current_user.id_empresa
+            ).first()
+    else:
+        # Validar que el id_mapa pertenezca a la misma empresa
+        mapa = db.query(Mapa).filter(
+            Mapa.id_mapa == id_mapa,
+            Mapa.id_empresa == current_user.id_empresa
+        ).first()
     if not mapa:
         return {"mensaje": "No hay mapas registrados.", "mapa": None, "objetos": []}
     ubicaciones_db = db.query(UbicacionFisica).filter(UbicacionFisica.id_mapa == mapa.id_mapa).all()
