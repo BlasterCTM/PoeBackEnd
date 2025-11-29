@@ -1,11 +1,18 @@
-# Endpoint refactorizado para usar el servicio
-from app.services.ruta_optimizada import obtener_ruta_optimizada
+# Endpoint refactorizado: ahora se usa RutaService (import más abajo)
 
 from app.models.usuario import Usuario, RolEnum
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
+
+from sqlalchemy import desc
+from sqlalchemy.orm import joinedload
+from app.models.ruta_optimizada import RutaOptimizada
+from app.models.detalle_ruta import DetalleRuta
+from app.models.paso_ruta import PasoRuta
+from app.models.mueble_reposicion import MuebleReposicion
+from app.models.usuario import Usuario as UsuarioModel
 
 # Definir el router principal después de los imports
 router = APIRouter()
@@ -93,8 +100,6 @@ from app.schemas.ruta_optimizada import (
 from app.repositories.ruta import calcular_ruta, generar_grafo
 from app.models.mapa import Mapa
 from app.models.objeto_tipo import ObjetoTipo
-import random
-import itertools
 
 supervision_repository = SupervisionRepository()
 
@@ -922,363 +927,35 @@ def detalle_tarea_reponedor(
 
 
 
-@router.get("/tareas/{id_tarea}/ruta-optimizada", response_model=dict)
-def optimizar_rutas_por_detalle_tarea(
+from app.services.ruta_optimizada import RutaService
+
+@router.post("/tareas/{id_tarea}/ruta-optimizada")
+def generar_ruta_optimizada(
     id_tarea: int,
-    algoritmo: str = Query("vecino_mas_cercano", description="Algoritmo a utilizar: 'vecino_mas_cercano', 'fuerza_bruta', 'genetico'"),
+    algoritmo: str = "vecino_mas_cercano",
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     """
-    Genera y almacena rutas optimizadas independientes para cada detalle_tarea de una tarea.
-    Devuelve un JSON con todas las rutas optimizadas por producto.
-    Algoritmos disponibles: vecino_mas_cercano, fuerza_bruta, genetico
+    Genera una ruta optimizada para una tarea específica usando RutaService V2.
     """
-    # 1. Validar tarea y permisos
-    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea).first()
+    tarea = db.query(Tarea).filter(Tarea.id_tarea == id_tarea, Tarea.id_empresa == current_user.id_empresa).first()
     if not tarea:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
-    if current_user.rol.nombre_rol == RolEnum.REPONEDOR.value and int(tarea.id_reponedor) != int(current_user.id_usuario):
-        raise HTTPException(status_code=403, detail="No tienes acceso a esta tarea.")
-
-    # 2. Obtener detalles de tarea
-    detalles = db.query(DetalleTarea).filter(DetalleTarea.id_tarea == id_tarea).all()
-    if not detalles:
-        raise HTTPException(status_code=404, detail="No hay detalles de tarea para optimizar.")
-
-    # 3. Obtener info de reponedor
-    reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea.id_reponedor).first()
-    nombre_reponedor = reponedor.nombre if reponedor else None
-
-    # 4. Preparar respuesta
-    respuesta = {
-        "id_tarea": tarea.id_tarea,
-        "reponedor": nombre_reponedor,
-        "detalle_tareas": []
-    }
-
-    # 5. Limpiar rutas previas (opcional, según política)
-    from sqlalchemy import text
-    ids_detalle = ','.join(str(d.id_detalle) for d in detalles)
-    if ids_detalle:
-        # El nombre correcto de la columna es id_detalle_tarea en detalle_ruta
-        db.execute(text(f"DELETE FROM paso_ruta WHERE id_detalle_ruta IN (SELECT id_detalle_ruta FROM detalle_ruta WHERE id_detalle_tarea IN ({ids_detalle}))"))
-        db.execute(text(f"DELETE FROM detalle_ruta WHERE id_detalle_tarea IN ({ids_detalle})"))
-        db.commit()
-
-
-    # 6. Procesar cada detalle_tarea usando el servicio real
-    from app.services.ruta_optimizada import obtener_ruta_optimizada
-    # Llamamos al servicio para obtener la ruta global optimizada (incluye todos los pasos)
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    if current_user.rol.nombre_rol == RolEnum.REPONEDOR.value and tarea.id_reponedor != current_user.id_usuario:
+        raise HTTPException(status_code=403, detail="No puedes optimizar una tarea que no es tuya")
     try:
-        resultado = obtener_ruta_optimizada(
-            id_tarea,
-            algoritmo,
-            db,
-            current_user,
-            Tarea,
-            UsuarioModel,
-            EstadoTarea,
-            DetalleTarea,
-            Mapa,
-            UbicacionFisica,
-            ObjetoMapa,
-            ObjetoTipo,
-            PuntoReposicion,
-            MuebleReposicion,
-            Producto,
-            generar_grafo,
-            encontrar_punto_accesible_cruz,
-            encontrar_punto_accesible,
-            calcular_ruta,
-            CoordenadaResponse,
-            MuebleRutaResponse,
-            ProductoRutaResponse,
-            PuntoRutaResponse,
-            AlgoritmoResponse,
-            RutaOptimizadaResponse,
-            RolEnum
+        servicio = RutaService(db)
+        return servicio.optimizar_tarea(
+            id_tarea=id_tarea,
+            id_empresa=current_user.id_empresa,
+            algoritmo=algoritmo
         )
     except ValueError as e:
-        # Error de punto accesible: mostrar como warning global y continuar con respuesta vacía
-        print(f"[ERROR] {str(e)}")
-        return {
-            "id_tarea": tarea.id_tarea,
-            "reponedor": nombre_reponedor,
-            "detalle_tareas": [],
-            "warning": str(e)
-        }
-    except HTTPException as e:
-        return {"error": e.detail}
-
-    # ENFOQUE HÍBRIDO: Usar optimización global para el orden, rutas individuales para precisión
-    from collections import defaultdict
-    
-    print(f"[DEBUG] ===== INICIO ENFOQUE HÍBRIDO =====")
-    print(f"[DEBUG] Total detalle_tareas a procesar: {len(detalles)}")
-    
-    # Paso 1: Agrupar detalle_tareas por mueble_id
-    muebles_grupos = defaultdict(list)
-    
-    for detalle in detalles:
-        producto = db.query(Producto).filter(Producto.id_producto == detalle.id_producto).first()
-        producto_nombre = producto.nombre if producto else "Producto desconocido"
-        
-        print(f"[DEBUG] Procesando detalle {detalle.id_detalle} - Producto: {producto_nombre} - Punto: {detalle.id_punto}")
-        
-        punto = db.query(PuntoReposicion).filter(PuntoReposicion.id_punto == detalle.id_punto).first()
-        if punto and punto.id_mueble:
-            muebles_grupos[punto.id_mueble].append({
-                'detalle': detalle,
-                'punto': punto
-            })
-            print(f"[DEBUG] ✓ Detalle {detalle.id_detalle} ({producto_nombre}) asignado a mueble {punto.id_mueble}")
-        else:
-            print(f"[WARNING] ✗ Punto {detalle.id_punto} no tiene mueble asignado o punto no encontrado")
-    
-    print(f"[DEBUG] Total muebles encontrados: {len(muebles_grupos)}")
-    print(f"[DEBUG] Muebles IDs: {list(muebles_grupos.keys())}")
-    
-    # Paso 2: Extraer orden óptimo de muebles desde la ruta global
-    pasos_globales = resultado.coordenadas_ruta
-    
-    def distancia_manhattan(p1, p2):
-        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
-    
-    # Mapear cada mueble a su posición en la ruta global
-    muebles_orden = []
-    
-    for mueble_id, grupo in muebles_grupos.items():
-        # Obtener información y coordenadas del mueble
-        mueble = db.query(MuebleReposicion).filter(MuebleReposicion.id_mueble == mueble_id).first()
-        objeto = None
-        coordenadas_mueble = []
-        
-        if mueble:
-            objeto = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto == mueble.id_objeto).first()
-            if objeto:
-                ubicaciones = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).all()
-                for ubic in ubicaciones:
-                    coordenadas_mueble.append((ubic.x, ubic.y))
-        
-        # Encontrar el punto más cercano en la ruta global
-        mejor_posicion = -1
-        min_distancia = float('inf')
-        
-        if coordenadas_mueble:
-            for coord_mueble in coordenadas_mueble:
-                for idx, paso in enumerate(pasos_globales):
-                    dist = distancia_manhattan((paso.x, paso.y), coord_mueble)
-                    if dist < min_distancia:
-                        min_distancia = dist
-                        mejor_posicion = idx
-                        if dist <= 1:  # Encontrado punto adyacente
-                            break
-        
-        muebles_orden.append({
-            'mueble_id': mueble_id,
-            'grupo': grupo,
-            'objeto': objeto,
-            'coordenadas': coordenadas_mueble,
-            'posicion_global': mejor_posicion,
-            'distancia_min': min_distancia
-        })
-        
-        print(f"[DEBUG] Mueble {mueble_id}: posición en ruta global = {mejor_posicion}, distancia = {min_distancia}")
-    
-    # Paso 3: Ordenar muebles según su aparición en la ruta global
-    muebles_orden_sorted = sorted(muebles_orden, key=lambda x: x['posicion_global'] if x['posicion_global'] >= 0 else float('inf'))
-    
-    print(f"[DEBUG] Orden final de muebles:")
-    for i, m in enumerate(muebles_orden_sorted):
-        print(f"[DEBUG] {i+1}. Mueble {m['mueble_id']} (posición: {m['posicion_global']})")
-    
-    # Paso 4: Generar rutas individuales siguiendo el orden optimizado
-    muebles_rutas = []
-    posicion_actual = (0, 0)  # Punto de inicio
-    ruta_global_completa = []
-    
-    for i, mueble_info in enumerate(muebles_orden_sorted):
-        mueble_id = mueble_info['mueble_id']
-        grupo = mueble_info['grupo']
-        objeto = mueble_info['objeto']
-        coordenadas_mueble = mueble_info['coordenadas']
-        
-        print(f"[DEBUG] ===== GENERANDO RUTA INDIVIDUAL PARA MUEBLE {mueble_id} =====")
-        
-        # Preparar lista de detalle_tareas para este mueble
-        detalle_tareas_mueble = []
-        for item in grupo:
-            detalle = item['detalle']
-            punto = item['punto']
-            producto = db.query(Producto).filter(Producto.id_producto == detalle.id_producto).first()
-            
-            detalle_tareas_mueble.append({
-                "id_detalle_tarea": detalle.id_detalle,
-                "producto": producto.nombre if producto else None,
-                "cantidad": detalle.cantidad,
-                "id_punto_reposicion": punto.id_punto
-            })
-        
-        # Generar ruta individual hacia este mueble
-        ruta_mueble_individual = []
-        distancia_total = 0
-        
-        print(f"[DEBUG] Mueble {mueble_id}: coordenadas_mueble = {coordenadas_mueble}")
-        print(f"[DEBUG] Posición actual antes de calcular ruta: {posicion_actual}")
-        
-        if coordenadas_mueble:
-            # Encontrar coordenada de acceso al mueble (punto caminable más cercano)
-            try:
-                # Obtener mapa activo
-                print(f"[DEBUG] Obteniendo mapa activo para mueble {mueble_id}...")
-                mapa_activo = db.query(Mapa).filter(Mapa.activo == True).first()
-                if not mapa_activo:
-                    print(f"[ERROR] No hay mapa activo en la base de datos")
-                    ruta_mueble_individual = []
-                    distancia_total = 0
-                    continue
-                
-                # Obtener coordenadas caminables del grafo
-                print(f"[DEBUG] Generando grafo para mueble {mueble_id} con mapa {mapa_activo.id_mapa}...")
-                grafo = generar_grafo(db, mapa_activo.id_mapa)
-                coordenadas_caminables = grafo  # grafo ya es un set o lista de coordenadas caminables
-                print(f"[DEBUG] Total coordenadas caminables: {len(coordenadas_caminables)}")
-                
-                # Mostrar algunas coordenadas caminables para debug
-                coordenadas_muestra = list(coordenadas_caminables)[:10]
-                print(f"[DEBUG] Primeras 10 coordenadas caminables: {coordenadas_muestra}")
-                
-                # Encontrar mejor punto de acceso al mueble
-                mejor_acceso = None
-                min_dist_acceso = float('inf')
-                
-                print(f"[DEBUG] Buscando punto de acceso para {len(coordenadas_mueble)} coordenadas del mueble...")
-                
-                for coord_mueble in coordenadas_mueble:
-                    print(f"[DEBUG] Buscando acceso para coordenada del mueble: {coord_mueble}")
-                    try:
-                        punto_acceso = encontrar_punto_accesible_cruz(coord_mueble, coordenadas_caminables)
-                        print(f"[DEBUG] Punto de acceso encontrado: {punto_acceso}")
-                        
-                        dist_desde_actual = distancia_manhattan(posicion_actual, punto_acceso)
-                        print(f"[DEBUG] Distancia desde posición actual {posicion_actual}: {dist_desde_actual}")
-                        
-                        if dist_desde_actual < min_dist_acceso:
-                            min_dist_acceso = dist_desde_actual
-                            mejor_acceso = punto_acceso
-                            print(f"[DEBUG] Nuevo mejor acceso: {mejor_acceso} (distancia: {min_dist_acceso})")
-                            
-                    except ValueError as ve:
-                        print(f"[ERROR] Error en encontrar_punto_accesible_cruz para {coord_mueble}: {str(ve)}")
-                        continue
-                    except Exception as e:
-                        print(f"[ERROR] Error inesperado buscando acceso para {coord_mueble}: {str(e)}")
-                        continue
-                
-                print(f"[DEBUG] Mejor acceso final para mueble {mueble_id}: {mejor_acceso}")
-                
-                if mejor_acceso:
-                    # Calcular ruta desde posición actual hasta el mueble
-                    try:
-                        print(f"[DEBUG] [A* INPUT] inicio={posicion_actual}, meta={mejor_acceso}, ejemplo_walkable={list(coordenadas_caminables)[:5]}")
-                        ruta_hacia_mueble = calcular_ruta(db, mapa_activo.id_mapa, posicion_actual, mejor_acceso)
-                        print(f"[DEBUG] Ruta calculada: {len(ruta_hacia_mueble)} pasos")
-                        print(f"[DEBUG] Ruta completa: {ruta_hacia_mueble}")
-                        # Convertir a formato de respuesta
-                        for j, (x, y) in enumerate(ruta_hacia_mueble):
-                            ruta_mueble_individual.append({
-                                "orden": j + 1,
-                                "x": x,
-                                "y": y
-                            })
-                        distancia_total = len(ruta_hacia_mueble) - 1 if len(ruta_hacia_mueble) > 1 else 0
-                        print(f"[DEBUG] Distancia total calculada: {distancia_total}")
-                        # Actualizar posición actual para el siguiente mueble
-                        posicion_actual = mejor_acceso
-                        print(f"[DEBUG] Posición actual actualizada a: {posicion_actual}")
-                        # Agregar a ruta global completa
-                        ruta_global_completa.extend(ruta_hacia_mueble)
-                        print(f"[DEBUG] ✅ Ruta generada exitosamente para mueble {mueble_id}")
-                        print(f"[DEBUG] - Pasos en ruta: {len(ruta_mueble_individual)}")
-                        print(f"[DEBUG] - Distancia: {distancia_total}")
-                    except Exception as e:
-                        print(f"[ERROR] Error calculando ruta hacia mueble {mueble_id}: {str(e)}")
-                        print(f"[ERROR] Tipo de error: {type(e)}")
-                        import traceback
-                        print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                        ruta_mueble_individual = []
-                        distancia_total = 0
-                else:
-                    print(f"[ERROR] No se pudo encontrar punto de acceso para mueble {mueble_id}")
-                    print(f"[DEBUG] Coordenadas del mueble: {coordenadas_mueble}")
-                    print(f"[DEBUG] ¿Hay coordenadas caminables cerca?")
-                    
-                    # Mostrar coordenadas caminables cerca del mueble para debug
-                    for coord_mueble in coordenadas_mueble:
-                        x, y = coord_mueble
-                        cercanas = []
-                        for dx in range(-2, 3):
-                            for dy in range(-2, 3):
-                                test_coord = (x + dx, y + dy)
-                                if test_coord in coordenadas_caminables:
-                                    cercanas.append(test_coord)
-                        print(f"[DEBUG] Coordenadas caminables cerca de {coord_mueble}: {cercanas}")
-                    
-                    ruta_mueble_individual = []
-                    distancia_total = 0
-                    
-            except Exception as e:
-                print(f"[ERROR] Error generando grafo o acceso para mueble {mueble_id}: {str(e)}")
-                print(f"[ERROR] Tipo de error: {type(e)}")
-                import traceback
-                print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                ruta_mueble_individual = []
-                distancia_total = 0
-        else:
-            print(f"[ERROR] Mueble {mueble_id} no tiene coordenadas definidas")
-            print(f"[DEBUG] Objeto del mueble: {objeto}")
-            if objeto:
-                ubicaciones = db.query(UbicacionFisica).filter(UbicacionFisica.id_objeto == objeto.id_objeto).all()
-                print(f"[DEBUG] Ubicaciones encontradas: {[(u.x, u.y) for u in ubicaciones]}")
-            ruta_mueble_individual = []
-            distancia_total = 0
-        
-        # SIEMPRE agregar el mueble a la respuesta (incluso si la ruta falló)
-        muebles_rutas.append({
-            "id_mueble": mueble_id,
-            "nombre_mueble": objeto.nombre if objeto else f"Mueble {mueble_id}",
-            "detalle_tareas": detalle_tareas_mueble,
-            "ruta_optimizada_mueble": ruta_mueble_individual,
-            "distancia_total_mueble": float(distancia_total),
-            "algoritmo_usado": getattr(resultado.algoritmo_utilizado, "nombre", None)
-        })
-        
-        print(f"[DEBUG] ✓ Mueble {mueble_id} agregado con {len(detalle_tareas_mueble)} productos y ruta de {len(ruta_mueble_individual)} pasos")
-    
-    print(f"[DEBUG] ===== RESULTADO FINAL =====")
-    print(f"[DEBUG] Total muebles en respuesta: {len(muebles_rutas)}")
-    for i, mueble in enumerate(muebles_rutas):
-        print(f"[DEBUG] Mueble {i+1}: ID={mueble['id_mueble']}, Productos={len(mueble['detalle_tareas'])}, Pasos={len(mueble['ruta_optimizada_mueble'])}")
-    print(f"[DEBUG] ===============================")
-
-    respuesta["muebles_rutas"] = muebles_rutas
-    respuesta["tiempo_estimado_total"] = getattr(resultado, "tiempo_estimado_minutos", None)
-    
-    # Usar la ruta global completa generada por el enfoque híbrido si está disponible
-    if ruta_global_completa:
-        respuesta["coordenadas_ruta_global"] = [
-            {"x": x, "y": y} for x, y in ruta_global_completa
-        ]
-        print(f"[DEBUG] Usando ruta global híbrida con {len(ruta_global_completa)} pasos")
-    else:
-        # Fallback a la ruta global original del servicio
-        respuesta["coordenadas_ruta_global"] = [
-            {"x": c.x, "y": c.y} for c in getattr(resultado, "coordenadas_ruta", [])
-        ]
-        print(f"[DEBUG] Usando ruta global original del servicio")
-    
-    return respuesta
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR SERVER] {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno al optimizar ruta")
 
 @router.put("/tareas/{id_tarea}/iniciar", status_code=200)
 def iniciar_tarea(
@@ -1371,4 +1048,164 @@ def reiniciar_tarea(
         "mensaje": "Tarea reiniciada exitosamente. La tarea está ahora en estado pendiente.",
         "estado": "pendiente",
         "id_tarea": tarea.id_tarea
+    }
+
+
+# --- OPCIÓN A: Estructura Moderna (Plana y Limpia) ---
+@router.get("/{id_tarea}/ruta-visual")
+def obtener_ruta_visual_moderna(
+    id_tarea: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    [NUEVO] Retorna la ruta optimizada con una estructura plana y fácil de usar.
+    Ideal para nuevas implementaciones en el Frontend.
+    """
+    # 1. Buscar la ruta más reciente
+    ruta_db = (
+        db.query(RutaOptimizada)
+        .filter(
+            RutaOptimizada.id_tarea == id_tarea,
+            RutaOptimizada.id_empresa == current_user.id_empresa
+        )
+        .order_by(desc(RutaOptimizada.id_ruta))
+        .first()
+    )
+
+    if not ruta_db:
+        raise HTTPException(status_code=404, detail="No se ha generado una ruta para esta tarea.")
+
+    # 2. Validar acceso
+    if current_user.rol.nombre_rol == RolEnum.REPONEDOR.value and ruta_db.id_reponedor != current_user.id_usuario:
+         raise HTTPException(status_code=403, detail="No tienes permiso para ver esta ruta.")
+
+    # 3. Construir respuesta plana
+    coordenadas_globales = []
+    puntos_visita = []
+    
+    detalles = (
+        db.query(DetalleRuta)
+        .filter(DetalleRuta.id_ruta == ruta_db.id_ruta)
+        .order_by(DetalleRuta.orden)
+        .options(
+            joinedload(DetalleRuta.pasos),
+            joinedload(DetalleRuta.punto).joinedload(PuntoReposicion.producto),
+            joinedload(DetalleRuta.punto).joinedload(PuntoReposicion.mueble).joinedload(MuebleReposicion.objeto)
+        )
+        .all()
+    )
+
+    secuencia_total = 1
+    
+    for det in detalles:
+        # Pasos (Línea continua)
+        pasos_segmento = sorted(det.pasos, key=lambda p: p.secuencia)
+        for paso in pasos_segmento:
+            coordenadas_globales.append({
+                "secuencia": secuencia_total,
+                "x": paso.x,
+                "y": paso.y
+            })
+            secuencia_total += 1
+            
+        # Puntos de interés (Marcadores)
+        coord_llegada = pasos_segmento[-1] if pasos_segmento else None
+        
+        puntos_visita.append({
+            "orden": det.orden,
+            "x_acceso": coord_llegada.x if coord_llegada else 0,
+            "y_acceso": coord_llegada.y if coord_llegada else 0,
+            "nombre_producto": det.punto.producto.nombre if (det.punto and det.punto.producto) else "Producto Desconocido",
+            "nombre_mueble": det.punto.mueble.objeto.nombre if (det.punto and det.punto.mueble) else "Mueble",
+            "estanteria": det.punto.estanteria,
+            "nivel": det.punto.nivel
+        })
+
+    return {
+        "id_ruta": ruta_db.id_ruta,
+        "tiempo_estimado_min": round(ruta_db.tiempo_estimado / 60, 1),
+        "distancia_total": ruta_db.distancia_total,
+        "coordenadas_ruta": coordenadas_globales,
+        "puntos_visita": puntos_visita
+    }
+
+
+# --- OPCIÓN B: Estructura Legacy (Compatibilidad Total) ---
+@router.get("/{id_tarea}/ruta-optimizada-visual")
+def obtener_ruta_visual_legacy(
+    id_tarea: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    [COMPATIBILIDAD] Retorna la ruta con la estructura EXACTA que el Frontend antiguo espera.
+    Usa esto si no quieres cambiar el código del mapa en React.
+    """
+    ruta_db = (
+        db.query(RutaOptimizada)
+        .filter(
+            RutaOptimizada.id_tarea == id_tarea,
+            RutaOptimizada.id_empresa == current_user.id_empresa
+        )
+        .order_by(desc(RutaOptimizada.id_ruta))
+        .first()
+    )
+
+    if not ruta_db:
+        raise HTTPException(status_code=404, detail="No hay ruta generada para esta tarea.")
+
+    reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == ruta_db.id_reponedor).first()
+    nombre_reponedor = reponedor.nombre if reponedor else "Desconocido"
+
+    detalles = (
+        db.query(DetalleRuta)
+        .filter(DetalleRuta.id_ruta == ruta_db.id_ruta)
+        .order_by(DetalleRuta.orden)
+        .options(
+            joinedload(DetalleRuta.pasos),
+            joinedload(DetalleRuta.punto).joinedload(PuntoReposicion.producto),
+            joinedload(DetalleRuta.detalle_tarea)
+        )
+        .all()
+    )
+
+    puntos_reposicion_out = []
+    coordenadas_ruta_out = []
+
+    for det in detalles:
+        # Reconstruir coordenadas simples (x, y)
+        pasos_ordenados = sorted(det.pasos, key=lambda p: p.secuencia)
+        for paso in pasos_ordenados:
+            coordenadas_ruta_out.append({
+                "x": paso.x,
+                "y": paso.y
+            })
+        
+        # Reconstruir estructura anidada 'ubicacion'
+        coord_llegada = pasos_ordenados[-1] if pasos_ordenados else None
+        x_final = coord_llegada.x if coord_llegada else 0
+        y_final = coord_llegada.y if coord_llegada else 0
+        
+        cantidad = det.detalle_tarea.cantidad if det.detalle_tarea else 0
+
+        puntos_reposicion_out.append({
+            "id_punto": det.id_punto,
+            "id_producto": det.punto.id_producto if det.punto else None,
+            "nombre_producto": det.punto.producto.nombre if (det.punto and det.punto.producto) else "Producto Desconocido",
+            "cantidad": cantidad,
+            "ubicacion": {
+                "x": x_final,
+                "y": y_final
+            }
+        })
+
+    return {
+        "reponedor": nombre_reponedor,
+        "puntos_reposicion": puntos_reposicion_out,
+        "coordenadas_ruta": coordenadas_ruta_out,
+        "algoritmo": ruta_db.algoritmo_usado,
+        "distancia_total": ruta_db.distancia_total,
+        "tiempo_estimado": ruta_db.tiempo_estimado,
+        "muebles_rutas": [] # Campo legacy vacío
     }
