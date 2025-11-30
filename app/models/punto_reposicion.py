@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, ForeignKey
+from sqlalchemy.orm import relationship
 from app.core.database.database import Base
 
 class PuntoReposicion(Base):
@@ -10,3 +11,6 @@ class PuntoReposicion(Base):
     id_producto = Column(Integer, ForeignKey("producto.id_producto"), nullable=True)
     id_usuario = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)  # Usuario (reponedor) asignado
     id_empresa = Column(Integer, ForeignKey("empresa.id_empresa", ondelete="CASCADE"), nullable=False)
+    mueble = relationship("MuebleReposicion", back_populates="puntos")
+    producto = relationship("Producto")
+    usuario = relationship("Usuario")
