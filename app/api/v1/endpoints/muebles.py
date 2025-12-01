@@ -10,6 +10,7 @@ from app.models.mapa import Mapa
 from app.models.punto_reposicion import PuntoReposicion
 from app.core.security.auth import get_current_user
 from app.models.usuario import Usuario
+from app.repositories import punto_reposicion as punto_reposicion_repository
 
 router = APIRouter()
 
@@ -63,38 +64,38 @@ def crear_mueble_reposicion(
     id_objeto = body.get("id_objeto")
     filas = body.get("filas")
     columnas = body.get("columnas")
+    direccion = (body.get("direccion") or "T").upper()
     if not id_objeto or not isinstance(filas, int) or not isinstance(columnas, int) or filas <= 0 or columnas <= 0:
         raise HTTPException(status_code=422, detail="id_objeto, filas y columnas son requeridos y deben ser mayores a cero.")
+    # Validar direccion
+    if direccion not in ["N", "S", "E", "O", "T"]:
+        raise HTTPException(status_code=422, detail="direccion debe ser una de: N,S,E,O,T")
     try:
-        # Iniciar transacción
+        # Crear mueble y generar puntos usando repositorio (evita lógica duplicada)
         mueble = MuebleReposicion(
-            id_objeto=id_objeto, 
-            filas=filas, 
+            id_objeto=id_objeto,
+            filas=filas,
             columnas=columnas,
+            direccion=direccion,
             id_empresa=current_user.id_empresa
         )
         db.add(mueble)
-        db.flush()  # Para obtener id_mueble
-        puntos = []
-        for fila in range(1, filas+1):
-            for columna in range(1, columnas+1):
-                # Validar duplicidad
-                existe = db.query(PuntoReposicion).filter_by(
-                    id_mueble=mueble.id_mueble, 
-                    nivel=fila, 
-                    estanteria=columna
-                ).first()
-                if not existe:
-                    punto = PuntoReposicion(
-                        id_mueble=mueble.id_mueble, 
-                        nivel=fila, 
-                        estanteria=columna,
-                        id_empresa=current_user.id_empresa
-                    )
-                    db.add(punto)
-                    puntos.append(punto)
+        db.flush()  # obtener id_mueble
+
+        # Generar puntos en bloque
+        punto_reposicion_repository.generar_puntos_mueble(
+            db,
+            mueble.id_mueble,
+            filas,
+            columnas,
+            current_user.id_empresa
+        )
+
         db.commit()
         db.refresh(mueble)
+
+        # Consultar puntos generados para la respuesta
+        puntos = db.query(PuntoReposicion).filter(PuntoReposicion.id_mueble == mueble.id_mueble).all()
         return {
             "mueble": {
                 "id_mueble": mueble.id_mueble,
