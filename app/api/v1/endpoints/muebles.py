@@ -64,14 +64,19 @@ def crear_mueble_reposicion(
     id_objeto = body.get("id_objeto")
     filas = body.get("filas")
     columnas = body.get("columnas")
+    direccion = (body.get("direccion") or "T").upper()
     if not id_objeto or not isinstance(filas, int) or not isinstance(columnas, int) or filas <= 0 or columnas <= 0:
         raise HTTPException(status_code=422, detail="id_objeto, filas y columnas son requeridos y deben ser mayores a cero.")
+    # Validar direccion
+    if direccion not in ["N", "S", "E", "O", "T"]:
+        raise HTTPException(status_code=422, detail="direccion debe ser una de: N,S,E,O,T")
     try:
         # Crear mueble y generar puntos usando repositorio (evita lógica duplicada)
         mueble = MuebleReposicion(
             id_objeto=id_objeto,
             filas=filas,
             columnas=columnas,
+            direccion=direccion,
             id_empresa=current_user.id_empresa
         )
         db.add(mueble)

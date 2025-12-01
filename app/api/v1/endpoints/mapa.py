@@ -886,6 +886,7 @@ def guardar_layout_completo(
                     id_objeto=nuevo_obj.id_objeto,
                     filas=obj_in.filas or 3,
                     columnas=obj_in.columnas or 3,
+                    direccion=(obj_in.direccion.upper() if getattr(obj_in, 'direccion', None) else 'T'),
                     id_empresa=current_user.id_empresa
                 )
                 db.add(nuevo_mueble)

@@ -65,6 +65,7 @@ class ObjetoNuevoInput(BaseModel):
     id_tipo: int
     filas: Optional[int] = None
     columnas: Optional[int] = None
+    direccion: Optional[str] = None  # 'N','S','E','O','T'
 
 class LayoutCompletoCreate(BaseModel):
     objetos_nuevos: List[ObjetoNuevoInput]

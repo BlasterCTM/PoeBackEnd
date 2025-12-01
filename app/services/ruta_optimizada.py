@@ -46,9 +46,10 @@ class RutaService:
 
         # 4. Ejecutar Algoritmo TSP (Ordering) desde el punto de inicio real
         orden_visita = self._resolver_tsp(nodos_objetivo, algoritmo, start_pos=punto_inicio)
-
-        # 5. Calcular Rutas Físicas (Pathfinding A*) iniciando en la entrada
         ruta_completa_data = self._generar_camino_fisico(orden_visita, walkable_nodes, start_pos=punto_inicio)
+
+        # [NUEVO] LIMPIEZA PREVENTIVA: Borrar rutas antiguas de esta tarea
+        self._limpiar_rutas_anteriores(id_tarea)
 
         # 6. Persistencia Transaccional
         ruta_guardada = self._guardar_ruta(tarea, ruta_completa_data)
@@ -77,7 +78,20 @@ class RutaService:
         return tarea, detalles
 
     def _obtener_mapa_activo(self, id_empresa: int):
-        return self.db.query(Mapa).filter(Mapa.id_empresa == id_empresa, Mapa.activo == True).first()
+        """Devuelve el único mapa ACTIVO de la empresa.
+        - Si no hay ninguno: None
+        - Si hay más de uno: lanza ValueError (inconsistencia de datos)
+        """
+        mapas_activos = (
+            self.db.query(Mapa)
+            .filter(Mapa.id_empresa == id_empresa, Mapa.activo == True)
+            .all()
+        )
+        if not mapas_activos:
+            return None
+        if len(mapas_activos) > 1:
+            raise ValueError("Hay múltiples mapas activos para la empresa. Debe existir solo uno.")
+        return mapas_activos[0]
 
     def _obtener_punto_inicio(self, id_mapa: int) -> Tuple[int, int]:
         """Busca coordenadas (x,y) de un objeto tipo 'Entrada'. Fallback (0,0)."""
@@ -116,7 +130,8 @@ class RutaService:
                 print(f"[WARN] El mueble {objeto_mapa.nombre} no tiene ubicación física en el mapa.")
                 continue
 
-            access_point = self._encontrar_mejor_acceso(coords_mueble, walkable)
+            # Pasamos el punto específico (con estantería/nivel) para orientar el acceso
+            access_point = self._encontrar_mejor_acceso(coords_mueble, walkable, mueble, det.punto)
             
             if not access_point:
                 print(f"[WARN] Inaccesible: Mueble {objeto_mapa.nombre} en {coords_mueble[0].x},{coords_mueble[0].y} está bloqueado.")
@@ -131,17 +146,64 @@ class RutaService:
         
         return nodos_procesados
 
-    def _encontrar_mejor_acceso(self, coords_mueble: List[UbicacionFisica], walkable: set) -> Tuple[int, int]:
+    def _encontrar_mejor_acceso(self,
+        coords_mueble: List[UbicacionFisica],
+        walkable: set,
+        mueble: MuebleReposicion,
+        punto_especifico: PuntoReposicion
+    ) -> Tuple[int, int]:
         """
-        Escanea el perímetro de TODAS las celdas del mueble para encontrar una caminable.
+        1) Filtra accesos por Dirección (N/S/E/O).
+        2) Prioriza el acceso más cercano a la columna/estantería del producto.
+        Asume coordenadas pantalla (0,0 arriba-izquierda), y aumenta hacia abajo.
         """
-        deltas = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+        if not coords_mueble:
+            return None
+
+        xs = [c.x for c in coords_mueble]
+        ys = [c.y for c in coords_mueble]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        ancho_fisico = (max_x - min_x) + 1
+        alto_fisico = (max_y - min_y) + 1
+        es_horizontal = ancho_fisico > alto_fisico
+
+        total_cols = max(1, mueble.columnas)
+        col_actual = max(0, min((punto_especifico.estanteria or 1) - 1, total_cols - 1))
+        ratio = col_actual / total_cols if total_cols > 1 else 0.5
+
+        if es_horizontal:
+            target_x = min_x + (ancho_fisico * ratio)
+            target_y = min_y + (alto_fisico / 2)
+        else:
+            target_x = min_x + (ancho_fisico / 2)
+            target_y = min_y + (alto_fisico * ratio)
+        target_slot = (target_x, target_y)
+
+        deltas_map = {
+            'N': [(0, -1)], 'S': [(0, 1)], 'E': [(1, 0)], 'O': [(-1, 0)],
+            'T': [(0, 1), (0, -1), (1, 0), (-1, 0)]
+        }
+        dir_mueble = mueble.direccion if getattr(mueble, 'direccion', None) else 'T'
+        deltas = deltas_map.get(dir_mueble, deltas_map['T'])
+
+        candidatos = []
         for celda in coords_mueble:
             for dx, dy in deltas:
                 vecino = (celda.x + dx, celda.y + dy)
                 if vecino in walkable:
-                    return vecino
-        return None
+                    candidatos.append(vecino)
+        if not candidatos:
+            return None
+
+        mejor_candidato = None
+        menor_distancia = float('inf')
+        for cand in candidatos:
+            dist = math.sqrt((cand[0] - target_slot[0])**2 + (cand[1] - target_slot[1])**2)
+            if dist < menor_distancia:
+                menor_distancia = dist
+                mejor_candidato = cand
+        return mejor_candidato
 
     def _resolver_tsp(self, nodos: List[Dict], algoritmo: str, start_pos: Tuple[int, int]) -> List[Dict]:
         """
@@ -235,3 +297,16 @@ class RutaService:
             ruta_data["detalles"],
             ruta_data["pasos_por_detalle"]
         )
+
+    def _limpiar_rutas_anteriores(self, id_tarea: int):
+        """Elimina rutas obsoletas para evitar duplicados en la BD."""
+        from app.models.ruta_optimizada import RutaOptimizada
+        rutas_viejas = (
+            self.db.query(RutaOptimizada)
+            .filter(RutaOptimizada.id_tarea == id_tarea)
+            .all()
+        )
+        for ruta in rutas_viejas:
+            self.db.delete(ruta)
+        # Dejar que el commit del repositorio de ruta detallada persista los cambios
+        self.db.flush()
