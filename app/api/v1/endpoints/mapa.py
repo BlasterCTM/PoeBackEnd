@@ -4,20 +4,79 @@ from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
 from app.models.usuario import Usuario, RolEnum
 from app.models.mapa import Mapa
+from app.models.supervision import Supervision
 from app.models.ubicacion_fisica import UbicacionFisica
 from app.models.objeto_mapa import ObjetoMapa
 from app.models.objeto_tipo import ObjetoTipo
 from app.models.mueble_reposicion import MuebleReposicion
 from app.models.punto_reposicion import PuntoReposicion
 from app.models.producto import Producto
-from app.schemas.mapa import MapeoReposicionResponse, MapaOut, UbicacionOut, ObjetoOut, MuebleOut, PuntoReposicionOut, ProductoAsociado
+from app.schemas.mapa import (
+    MapeoReposicionResponse,
+    MapaOut,
+    UbicacionOut,
+    ObjetoOut,
+    MuebleOut,
+    PuntoReposicionOut,
+    ProductoAsociado,
+    ObjetoListadoOut,
+    ObjetoTipoListadoOut,
+    LayoutCompletoCreate,
+)
 from app.schemas.mapa_vista import (
     MapaVistaGraficaResponse, MapaVistaOut, ObjetoUbicacionOut, ObjetoMapaVistaOut, ObjetoTipoOut, MuebleVistaOut, PuntoReposicionVistaOut
 )
 from sqlalchemy.exc import SQLAlchemyError
 from app.repositories.punto_reposicion import desasignar_producto_de_punto
+from app.repositories import punto_reposicion as punto_reposicion_repository
+from typing import List
 
 router = APIRouter()
+
+# Schemas movidos a app/schemas/mapa.py (ObjetoTipoListadoOut, ObjetoListadoOut)
+
+# Listar todos los mapas de mi empresa
+@router.get("/todos", response_model=List[MapaOut])
+def listar_mis_mapas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Lista solo los mapas ACTIVOS de la empresa del usuario."""
+    mapas = db.query(Mapa).filter(
+        Mapa.id_empresa == current_user.id_empresa,
+        Mapa.activo == True
+    ).all()
+    return [MapaOut(id=m.id_mapa, nombre=m.nombre, ancho=m.ancho, alto=m.alto) for m in mapas]
+
+# Activar un mapa propio y desactivar los demás
+@router.put("/{id_mapa}/activar", response_model=MapaOut)
+def activar_mapa(
+    id_mapa: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Activa un mapa y desactiva todos los demás de la empresa.
+    """
+    mapa_a_activar = db.query(Mapa).filter(
+        Mapa.id_mapa == id_mapa,
+        Mapa.id_empresa == current_user.id_empresa
+    ).first()
+
+    if not mapa_a_activar:
+        raise HTTPException(status_code=404, detail="Mapa no encontrado.")
+
+    try:
+        # Desactivar TODOS los mapas de esta empresa
+        db.query(Mapa).filter(Mapa.id_empresa == current_user.id_empresa).update({"activo": False})
+        # Activar el seleccionado
+        mapa_a_activar.activo = True
+        db.commit()
+        db.refresh(mapa_a_activar)
+        return MapaOut(id=mapa_a_activar.id_mapa, nombre=mapa_a_activar.nombre, ancho=mapa_a_activar.ancho, alto=mapa_a_activar.alto)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al cambiar mapa activo: {str(e)}")
 
 @router.get("/mapa/reposicion", response_model=MapeoReposicionResponse)
 def visualizar_mapa_reposicion(
@@ -34,14 +93,11 @@ def visualizar_mapa_reposicion(
             Mapa.id_empresa == current_user.id_empresa,
             Mapa.activo == True
         ).first()
-        if not mapa:
-            mapa = db.query(Mapa).filter(
-                Mapa.id_empresa == current_user.id_empresa
-            ).first()
     else:
         mapa = db.query(Mapa).filter(
             Mapa.id_mapa == id_mapa,
-            Mapa.id_empresa == current_user.id_empresa
+            Mapa.id_empresa == current_user.id_empresa,
+            Mapa.activo == True
         ).first()
     if not mapa:
         return {"mensaje": "No hay mapas registrados.", "mapa": None, "ubicaciones": []}
@@ -112,18 +168,11 @@ def vista_grafica_mapa(
         raise HTTPException(status_code=403, detail="Solo administradores pueden consultar la vista gráfica del mapa.")
     # Selección de mapa filtrando SIEMPRE por empresa del usuario
     if id_mapa is None:
-        # Buscar primero el mapa activo de la empresa del usuario
         mapa = db.query(Mapa).filter(
             Mapa.id_empresa == current_user.id_empresa,
             Mapa.activo == True
         ).first()
-        # Fallback: si no hay activo, tomar el primero de su empresa
-        if not mapa:
-            mapa = db.query(Mapa).filter(
-                Mapa.id_empresa == current_user.id_empresa
-            ).first()
     else:
-        # Validar que el id_mapa pertenezca a la misma empresa
         mapa = db.query(Mapa).filter(
             Mapa.id_mapa == id_mapa,
             Mapa.id_empresa == current_user.id_empresa
@@ -190,14 +239,6 @@ def vista_puntos_supervisor(
     if current_user.rol.nombre_rol.lower() != "supervisor":
         raise HTTPException(status_code=403, detail="Solo los supervisores pueden acceder a este recurso.")
 
-    from app.models.supervision import Supervision
-    from app.models.mueble_reposicion import MuebleReposicion
-    from app.models.punto_reposicion import PuntoReposicion
-    from app.models.objeto_mapa import ObjetoMapa
-    from app.models.ubicacion_fisica import UbicacionFisica
-    from app.models.objeto_tipo import ObjetoTipo
-    from app.models.mapa import Mapa
-    from app.models.producto import Producto
 
     # Obtener puntos asignados por usuario_punto
     puntos_usuario = db.query(PuntoReposicion.id_punto).filter(PuntoReposicion.id_usuario == current_user.id_usuario).all()
@@ -233,7 +274,8 @@ def vista_puntos_supervisor(
         return {"mensaje": "No se encontró la ubicación asociada al objeto."}
     mapa = db.query(Mapa).filter(
         Mapa.id_mapa == ubicacion.id_mapa,
-        Mapa.id_empresa == current_user.id_empresa
+        Mapa.id_empresa == current_user.id_empresa,
+        Mapa.activo == True
     ).first()
     if not mapa:
         return {"mensaje": "No se encontró el mapa asociado a tus puntos en tu empresa."}
@@ -449,20 +491,83 @@ def crear_mapa(
     if existe:
         raise HTTPException(status_code=409, detail="Ya existe un mapa con ese nombre en esta empresa.")
     try:
+        # 1. Crear el mapa (inactivo por defecto)
         mapa = Mapa(
-            nombre=nombre, 
-            ancho=ancho, 
+            nombre=nombre,
+            ancho=ancho,
             alto=alto,
-            id_empresa=current_user.id_empresa
+            id_empresa=current_user.id_empresa,
+            activo=False
         )
         db.add(mapa)
-        db.flush()  # Para obtener id_mapa
-        ubicaciones = []
+        db.flush()  # Obtener id_mapa
+
+        # 2. Inicializar la grilla con objeto "Suelo Base" (tipo Pasillo)
+        tipo_pasillo = db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("pasillo")).first()
+        id_tipo_pasillo = tipo_pasillo.id_tipo if tipo_pasillo else 1  # Fallback a 1
+
+        obj_suelo = db.query(ObjetoMapa).filter(
+            ObjetoMapa.id_empresa == current_user.id_empresa,
+            ObjetoMapa.nombre == "Suelo Base",
+            ObjetoMapa.id_tipo == id_tipo_pasillo
+        ).first()
+
+        if not obj_suelo:
+            obj_suelo = ObjetoMapa(
+                nombre="Suelo Base",
+                id_tipo=id_tipo_pasillo,
+                id_empresa=current_user.id_empresa
+            )
+            db.add(obj_suelo)
+            db.flush()
+
+        # Insertar grilla completa con Suelo Base
+        ubicaciones_objs = []
+        ubicaciones_resp = []
         for x in range(ancho):
             for y in range(alto):
-                ubic = UbicacionFisica(id_mapa=mapa.id_mapa, x=x, y=y)
-                db.add(ubic)
-                ubicaciones.append({"x": x, "y": y})
+                ubicaciones_objs.append(UbicacionFisica(
+                    id_mapa=mapa.id_mapa,
+                    x=x,
+                    y=y,
+                    id_objeto=obj_suelo.id_objeto
+                ))
+                ubicaciones_resp.append({"x": x, "y": y})
+        db.bulk_save_objects(ubicaciones_objs)
+
+        # 3. Asegurar "Muro Estándar" (tipo Pared) para la empresa
+        tipo_pared = db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("muro")).first()
+        if tipo_pared:
+            muro_existente = db.query(ObjetoMapa).filter(
+                ObjetoMapa.id_empresa == current_user.id_empresa,
+                ObjetoMapa.id_tipo == tipo_pared.id_tipo,
+                ObjetoMapa.nombre == "Muro Estándar"
+            ).first()
+            if not muro_existente:
+                muro_nuevo = ObjetoMapa(
+                    nombre="Muro Estándar",
+                    id_tipo=tipo_pared.id_tipo,
+                    id_empresa=current_user.id_empresa
+                )
+                db.add(muro_nuevo)
+        # [NUEVO] Lógica: Asegurar objeto y tipo 'Salida'
+        tipo_salida = db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("salida")).first()
+        if not tipo_salida:
+            tipo_salida = ObjetoTipo(nombre_tipo="salida", caminable=True, destino=False)
+            db.add(tipo_salida)
+            db.flush()
+        obj_salida = db.query(ObjetoMapa).filter(
+            ObjetoMapa.id_empresa == current_user.id_empresa,
+            ObjetoMapa.id_tipo == tipo_salida.id_tipo
+        ).first()
+        if not obj_salida:
+            obj_salida = ObjetoMapa(
+                nombre="Salida / Entrada",
+                id_tipo=tipo_salida.id_tipo,
+                id_empresa=current_user.id_empresa
+            )
+            db.add(obj_salida)
+
         db.commit()
         db.refresh(mapa)
         return {
@@ -470,8 +575,9 @@ def crear_mapa(
             "nombre": mapa.nombre,
             "ancho": mapa.ancho,
             "alto": mapa.alto,
-            "total_ubicaciones": len(ubicaciones),
-            "ubicaciones": ubicaciones
+            "activo": mapa.activo,
+            "total_ubicaciones": len(ubicaciones_resp),
+            "ubicaciones": ubicaciones_resp
         }
     except SQLAlchemyError as e:
         db.rollback()
@@ -510,14 +616,11 @@ def visualizar_mapa_supervisor(
             Mapa.id_empresa == current_user.id_empresa,
             Mapa.activo == True
         ).first()
-        if not mapa:
-            mapa = db.query(Mapa).filter(
-                Mapa.id_empresa == current_user.id_empresa
-            ).first()
     else:
         mapa = db.query(Mapa).filter(
             Mapa.id_mapa == id_mapa,
-            Mapa.id_empresa == current_user.id_empresa
+            Mapa.id_empresa == current_user.id_empresa,
+            Mapa.activo == True
         ).first()
     if not mapa:
         return {"mensaje": "No hay mapas registrados.", "mapa": None, "ubicaciones": []}
@@ -595,14 +698,11 @@ def visualizar_mapa_reponedor(
             Mapa.id_empresa == current_user.id_empresa,
             Mapa.activo == True
         ).first()
-        if not mapa:
-            mapa = db.query(Mapa).filter(
-                Mapa.id_empresa == current_user.id_empresa
-            ).first()
     else:
         mapa = db.query(Mapa).filter(
             Mapa.id_mapa == id_mapa,
-            Mapa.id_empresa == current_user.id_empresa
+            Mapa.id_empresa == current_user.id_empresa,
+            Mapa.activo == True
         ).first()
     if not mapa:
         return {"mensaje": "No hay mapas registrados.", "mapa": None, "ubicaciones": []}
@@ -659,40 +759,6 @@ def visualizar_mapa_reponedor(
         "ubicaciones": ubicaciones
     }
 
-@router.put("/mapa/{id_mapa}/activar", status_code=200)
-def activar_mapa(
-    id_mapa: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    """
-    Activa un mapa específico y desactiva todos los demás.
-    Solo puede haber un mapa activo a la vez.
-    """
-    if not current_user or current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
-        raise HTTPException(status_code=403, detail="Solo administradores pueden activar mapas.")
-    
-    # Verificar que el mapa existe
-    mapa = db.query(Mapa).filter(Mapa.id_mapa == id_mapa).first()
-    if not mapa:
-        raise HTTPException(status_code=404, detail="Mapa no encontrado.")
-    
-    # Desactivar todos los mapas
-    db.query(Mapa).update({Mapa.activo: False})
-    
-    # Activar el mapa seleccionado
-    mapa.activo = True
-    db.commit()
-    db.refresh(mapa)
-    
-    return {
-        "mensaje": f"Mapa '{mapa.nombre}' activado exitosamente.",
-        "mapa": {
-            "id_mapa": mapa.id_mapa,
-            "nombre": mapa.nombre,
-            "activo": mapa.activo
-        }
-    }
 
 @router.get("/mapa/activo", status_code=200)
 def obtener_mapa_activo(
@@ -726,3 +792,132 @@ def obtener_mapa_activo(
             "activo": mapa_activo.activo
         }
     }
+
+@router.get("/mapa/objetos", response_model=List[ObjetoListadoOut])
+def listar_objetos_mapa(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Lista todos los objetos disponibles para la empresa del usuario con su tipo.
+    Incluye 'Suelo Base' y 'Muro Estándar' si existen.
+    """
+    if not current_user or current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="No autorizado para listar objetos del mapa.")
+    objetos = db.query(ObjetoMapa).filter(ObjetoMapa.id_empresa == current_user.id_empresa).all()
+    tipos_cache = {}
+    resultado = []
+    for obj in objetos:
+        if obj.id_tipo not in tipos_cache:
+            tipo = db.query(ObjetoTipo).filter(ObjetoTipo.id_tipo == obj.id_tipo).first()
+            tipos_cache[obj.id_tipo] = tipo
+        tipo = tipos_cache.get(obj.id_tipo)
+        resultado.append(ObjetoListadoOut(
+            id_objeto=obj.id_objeto,
+            nombre=obj.nombre,
+            tipo=ObjetoTipoListadoOut(
+                id=tipo.id_tipo if tipo else 0,
+                nombre=tipo.nombre_tipo if tipo else "",
+                caminable=tipo.caminable if tipo else None
+            )
+        ))
+    return resultado
+
+@router.post("/{id_mapa}/guardar-layout-completo")
+def guardar_layout_completo(
+    id_mapa: int,
+    layout_in: LayoutCompletoCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Guarda el layout completo con validación de única 'Salida'."""
+    mapa = db.query(Mapa).filter(Mapa.id_mapa == id_mapa, Mapa.id_empresa == current_user.id_empresa).first()
+    if not mapa:
+        raise HTTPException(status_code=404, detail="Mapa no encontrado")
+
+    try:
+        # Validación: Debe existir exactamente UNA 'salida' entre los objetos colocados
+        tipo_salida = db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("salida")).first()
+        if not tipo_salida:
+            raise HTTPException(status_code=422, detail="Error de configuración: El tipo de objeto 'salida' no existe en el sistema.")
+        id_tipo_salida = tipo_salida.id_tipo
+
+        temp_id_to_type = {obj.temp_id: obj.id_tipo for obj in layout_in.objetos_nuevos}
+        ids_reales_usados = [u.id_objeto_real for u in layout_in.ubicaciones if u.id_objeto_real]
+        if ids_reales_usados:
+            objetos_reales_db = db.query(ObjetoMapa.id_objeto, ObjetoMapa.id_tipo).filter(ObjetoMapa.id_objeto.in_(ids_reales_usados)).all()
+            real_id_to_type = {oid: otipo for (oid, otipo) in objetos_reales_db}
+        else:
+            real_id_to_type = {}
+
+        celdas_con_salida = 0
+        objetos_salida_distintos = set()
+        for ubic in layout_in.ubicaciones:
+            tipo_este_objeto = None
+            identificador_unico = None
+            if ubic.ref_objeto_temp_id:
+                tipo_este_objeto = temp_id_to_type.get(ubic.ref_objeto_temp_id)
+                identificador_unico = ubic.ref_objeto_temp_id
+            elif ubic.id_objeto_real:
+                tipo_este_objeto = real_id_to_type.get(ubic.id_objeto_real)
+                identificador_unico = ubic.id_objeto_real
+            if tipo_este_objeto == id_tipo_salida:
+                celdas_con_salida += 1
+                objetos_salida_distintos.add(identificador_unico)
+
+        if len(objetos_salida_distintos) == 0:
+            raise HTTPException(status_code=422, detail="El mapa debe tener obligatoriamente una 'Salida'.")
+        if len(objetos_salida_distintos) > 1:
+            raise HTTPException(status_code=422, detail="El mapa solo puede tener una única 'Salida'. Has colocado más de una distinta.")
+
+        # Procesamiento normal: crear objetos nuevos y muebles
+        id_map = {}
+        for obj_in in layout_in.objetos_nuevos:
+            nuevo_obj = ObjetoMapa(
+                nombre=obj_in.nombre,
+                id_tipo=obj_in.id_tipo,
+                id_empresa=current_user.id_empresa
+            )
+            db.add(nuevo_obj)
+            db.flush()
+            id_map[obj_in.temp_id] = nuevo_obj.id_objeto
+            if obj_in.id_tipo == 2:
+                nuevo_mueble = MuebleReposicion(
+                    id_objeto=nuevo_obj.id_objeto,
+                    filas=obj_in.filas or 3,
+                    columnas=obj_in.columnas or 3,
+                    id_empresa=current_user.id_empresa
+                )
+                db.add(nuevo_mueble)
+                db.flush()
+                punto_reposicion_repository.generar_puntos_mueble(
+                    db,
+                    nuevo_mueble.id_mueble,
+                    nuevo_mueble.filas,
+                    nuevo_mueble.columnas,
+                    current_user.id_empresa
+                )
+
+        # Actualizar ubicaciones
+        for ubic in layout_in.ubicaciones:
+            id_obj_final = None
+            if ubic.ref_objeto_temp_id:
+                id_obj_final = id_map.get(ubic.ref_objeto_temp_id)
+            elif ubic.id_objeto_real:
+                id_obj_final = ubic.id_objeto_real
+            if id_obj_final is not None:
+                celda = db.query(UbicacionFisica).filter(
+                    UbicacionFisica.id_mapa == id_mapa,
+                    UbicacionFisica.x == ubic.x,
+                    UbicacionFisica.y == ubic.y
+                ).first()
+                if celda:
+                    celda.id_objeto = id_obj_final
+
+        db.commit()
+        return {"mensaje": "Layout guardado exitosamente"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al guardar layout: {str(e)}")

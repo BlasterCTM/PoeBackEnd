@@ -40,3 +40,32 @@ class MapeoReposicionResponse(BaseModel):
     mapa: Optional[MapaOut] = None
     ubicaciones: List[UbicacionOut]
     mensaje: Optional[str] = None
+
+# Listado general de objetos del mapa
+class ObjetoTipoListadoOut(BaseModel):
+    id: int
+    nombre: str
+    caminable: Optional[bool]
+
+class ObjetoListadoOut(BaseModel):
+    id_objeto: int
+    nombre: str
+    tipo: ObjetoTipoListadoOut
+
+# Inputs para guardar layout completo
+class UbicacionInput(BaseModel):
+    x: int
+    y: int
+    ref_objeto_temp_id: Optional[str] = None
+    id_objeto_real: Optional[int] = None
+
+class ObjetoNuevoInput(BaseModel):
+    temp_id: str
+    nombre: str
+    id_tipo: int
+    filas: Optional[int] = None
+    columnas: Optional[int] = None
+
+class LayoutCompletoCreate(BaseModel):
+    objetos_nuevos: List[ObjetoNuevoInput]
+    ubicaciones: List[UbicacionInput]

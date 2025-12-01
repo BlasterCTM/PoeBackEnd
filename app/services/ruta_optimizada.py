@@ -35,14 +35,20 @@ class RutaService:
         # 2. Generar Grafo de Navegación (Set de coordenadas caminables)
         walkable_nodes = generar_grafo(self.db, mapa.id_mapa)
 
+        # 2.1 Obtener punto de inicio dinámico (Entrada) o fallback (0,0)
+        punto_inicio = self._obtener_punto_inicio(mapa.id_mapa)
+        # Aseguramos que el punto de inicio esté considerado caminable
+        walkable_nodes.add(punto_inicio)
+        print(f"[INFO] Punto de inicio de la ruta: {punto_inicio}")
+
         # 3. Identificar Puntos de Interés y sus Accesos
         nodos_objetivo = self._procesar_puntos_visita(detalles, mapa.id_mapa, walkable_nodes)
 
-        # 4. Ejecutar Algoritmo TSP (Ordering)
-        orden_visita = self._resolver_tsp(nodos_objetivo, algoritmo, start_pos=(0, 0))
+        # 4. Ejecutar Algoritmo TSP (Ordering) desde el punto de inicio real
+        orden_visita = self._resolver_tsp(nodos_objetivo, algoritmo, start_pos=punto_inicio)
 
-        # 5. Calcular Rutas Físicas (Pathfinding A*)
-        ruta_completa_data = self._generar_camino_fisico(orden_visita, walkable_nodes, start_pos=(0,0))
+        # 5. Calcular Rutas Físicas (Pathfinding A*) iniciando en la entrada
+        ruta_completa_data = self._generar_camino_fisico(orden_visita, walkable_nodes, start_pos=punto_inicio)
 
         # 6. Persistencia Transaccional
         ruta_guardada = self._guardar_ruta(tarea, ruta_completa_data)
@@ -72,6 +78,23 @@ class RutaService:
 
     def _obtener_mapa_activo(self, id_empresa: int):
         return self.db.query(Mapa).filter(Mapa.id_empresa == id_empresa, Mapa.activo == True).first()
+
+    def _obtener_punto_inicio(self, id_mapa: int) -> Tuple[int, int]:
+        """Busca coordenadas (x,y) de un objeto tipo 'Entrada'. Fallback (0,0)."""
+        tipo_entrada = self.db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("salida")).first()
+        if tipo_entrada:
+            ubicacion_entrada = (
+                self.db.query(UbicacionFisica)
+                .join(ObjetoMapa, UbicacionFisica.id_objeto == ObjetoMapa.id_objeto)
+                .filter(
+                    UbicacionFisica.id_mapa == id_mapa,
+                    ObjetoMapa.id_tipo == tipo_entrada.id_tipo
+                )
+                .first()
+            )
+            if ubicacion_entrada:
+                return (ubicacion_entrada.x, ubicacion_entrada.y)
+        return (0, 0)
 
     def _procesar_puntos_visita(self, detalles: List[DetalleTarea], id_mapa: int, walkable: set) -> List[Dict]:
         """
