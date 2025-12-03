@@ -56,17 +56,9 @@ class ObjetoListadoOut(BaseModel):
 class UbicacionInput(BaseModel):
     x: int
     y: int
-    ref_objeto_temp_id: Optional[str] = None
-    id_objeto_real: Optional[int] = None
+    id_objeto_real: int
 
-class ObjetoNuevoInput(BaseModel):
-    temp_id: str
-    nombre: str
-    id_tipo: int
-    filas: Optional[int] = None
-    columnas: Optional[int] = None
-    direccion: Optional[str] = None  # 'N','S','E','O','T'
+# Eliminado: ObjetoNuevoInput (ya no se crean objetos al vuelo)
 
 class LayoutCompletoCreate(BaseModel):
-    objetos_nuevos: List[ObjetoNuevoInput]
     ubicaciones: List[UbicacionInput]
