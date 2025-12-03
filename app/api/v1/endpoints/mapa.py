@@ -823,6 +823,78 @@ def listar_objetos_mapa(
         ))
     return resultado
 
+#danko te odio aqui ta tu endpoint pa que deji de llorar
+@router.get("/mapa/{id_mapa}/objetos", response_model=List[ObjetoListadoOut])
+def listar_objetos_por_mapa(
+    id_mapa: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Lista solo los objetos presentes en el `id_mapa` indicado
+    y pertenecientes a la empresa del usuario.
+
+    - No depende de que el mapa esté activo.
+    - Usa `UbicacionFisica` para obtener los `id_objeto` colocados en el mapa.
+    """
+    if not current_user or current_user.rol.nombre_rol not in [RolEnum.ADMINISTRADOR.value, RolEnum.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="No autorizado para listar objetos del mapa.")
+
+    # Validar que el mapa exista y pertenezca a la empresa del usuario
+    mapa = db.query(Mapa).filter(
+        Mapa.id_mapa == id_mapa,
+        Mapa.id_empresa == current_user.id_empresa
+    ).first()
+    if not mapa:
+        raise HTTPException(status_code=404, detail="Mapa no encontrado para tu empresa.")
+
+    # Obtener id_objeto presentes en el mapa
+    ubicaciones = db.query(UbicacionFisica.id_objeto).filter(
+        UbicacionFisica.id_mapa == id_mapa,
+        UbicacionFisica.id_objeto.isnot(None)
+    ).all()
+    ids_objetos = list({row[0] for row in ubicaciones if row[0] is not None})
+
+    if not ids_objetos:
+        return []
+
+    # Identificar tipos base que deben verse siempre: pasillo, muro y salida
+    tipo_pasillo = db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("pasillo")).first()
+    tipo_muro = db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("muro")).first()
+    tipo_salida = db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("salida")).first()
+    tipos_base_ids = [t.id_tipo for t in [tipo_pasillo, tipo_muro, tipo_salida] if t]
+
+    # Traer objetos de la empresa cumpliendo:
+    # - Muebles (id_tipo == 2) SOLO si están presentes en el mapa (ids_objetos)
+    # - Tipos base (pasillo/muro/salida) SIEMPRE
+    query = db.query(ObjetoMapa).filter(ObjetoMapa.id_empresa == current_user.id_empresa)
+
+    # Construir condición OR: (muebles en mapa) OR (tipos base)
+    from sqlalchemy import or_, and_
+    condicion_muebles_en_mapa = and_(ObjetoMapa.id_tipo == 2, ObjetoMapa.id_objeto.in_(ids_objetos)) if ids_objetos else and_(ObjetoMapa.id_tipo == 2, False)
+    condicion_tipos_base = ObjetoMapa.id_tipo.in_(tipos_base_ids) if tipos_base_ids else and_(False)
+
+    objetos = query.filter(or_(condicion_muebles_en_mapa, condicion_tipos_base)).all()
+
+    # Cache de tipos para evitar N+1
+    tipos_cache = {}
+    resultado = []
+    for obj in objetos:
+        if obj.id_tipo not in tipos_cache:
+            tipo = db.query(ObjetoTipo).filter(ObjetoTipo.id_tipo == obj.id_tipo).first()
+            tipos_cache[obj.id_tipo] = tipo
+        tipo = tipos_cache.get(obj.id_tipo)
+        resultado.append(ObjetoListadoOut(
+            id_objeto=obj.id_objeto,
+            nombre=obj.nombre,
+            tipo=ObjetoTipoListadoOut(
+                id=tipo.id_tipo if tipo else 0,
+                nombre=tipo.nombre_tipo if tipo else "",
+                caminable=tipo.caminable if tipo else None
+            )
+        ))
+    return resultado
+
 @router.post("/{id_mapa}/guardar-layout-completo")
 def guardar_layout_completo(
     id_mapa: int,
