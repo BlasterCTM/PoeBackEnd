@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
 from app.models.usuario import Usuario, RolEnum
@@ -865,13 +865,13 @@ def listar_objetos_por_mapa(
     tipos_base_ids = [t.id_tipo for t in [tipo_pasillo, tipo_muro, tipo_salida] if t]
 
     # Traer objetos de la empresa cumpliendo:
-    # - Muebles (id_tipo == 2) SOLO si están presentes en el mapa (ids_objetos)
+    # - Muebles (id_tipo == 3) SOLO si están presentes en el mapa (ids_objetos)
     # - Tipos base (pasillo/muro/salida) SIEMPRE
     query = db.query(ObjetoMapa).filter(ObjetoMapa.id_empresa == current_user.id_empresa)
 
     # Construir condición OR: (muebles en mapa) OR (tipos base)
     from sqlalchemy import or_, and_
-    condicion_muebles_en_mapa = and_(ObjetoMapa.id_tipo == 2, ObjetoMapa.id_objeto.in_(ids_objetos)) if ids_objetos else and_(ObjetoMapa.id_tipo == 2, False)
+    condicion_muebles_en_mapa = and_(ObjetoMapa.id_tipo == 3, ObjetoMapa.id_objeto.in_(ids_objetos)) if ids_objetos else and_(ObjetoMapa.id_tipo == 3, False)
     condicion_tipos_base = ObjetoMapa.id_tipo.in_(tipos_base_ids) if tipos_base_ids else and_(False)
 
     objetos = query.filter(or_(condicion_muebles_en_mapa, condicion_tipos_base)).all()
@@ -895,6 +895,57 @@ def listar_objetos_por_mapa(
         ))
     return resultado
 
+
+
+@router.get("/mapa/{id_mapa}/objetos-disponibles", response_model=List[ObjetoListadoOut])
+def listar_objetos_disponibles_para_mapa(
+    id_mapa: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Validar que el mapa exista y pertenezca a la empresa del usuario
+    mapa = db.query(Mapa).filter(
+        Mapa.id_mapa == id_mapa,
+        Mapa.id_empresa == current_user.id_empresa
+    ).first()
+    if not mapa:
+        raise HTTPException(status_code=404, detail="Mapa no encontrado para tu empresa.")
+
+    subquery_ocupados = (
+        db.query(UbicacionFisica.id_objeto)
+        .filter(
+            UbicacionFisica.id_mapa == id_mapa,
+            UbicacionFisica.id_objeto.isnot(None)
+        )
+        .distinct()
+    )
+
+    objetos_disponibles = (
+        db.query(ObjetoMapa)
+        .filter(
+            ObjetoMapa.id_empresa == current_user.id_empresa,
+            ~ObjetoMapa.id_objeto.in_(subquery_ocupados)
+        )
+        .all()
+    )
+    tipos_cache = {}
+    resultado = []
+    for obj in objetos_disponibles:
+        if obj.id_tipo not in tipos_cache:
+            tipo = db.query(ObjetoTipo).filter(ObjetoTipo.id_tipo == obj.id_tipo).first()
+            tipos_cache[obj.id_tipo] = tipo
+        tipo = tipos_cache.get(obj.id_tipo)
+        resultado.append(ObjetoListadoOut(
+            id_objeto=obj.id_objeto,
+            nombre=obj.nombre,
+            tipo=ObjetoTipoListadoOut(
+                id=tipo.id_tipo if tipo else 0,
+                nombre=tipo.nombre_tipo if tipo else "",
+                caminable=tipo.caminable if tipo else None
+            )
+        ))
+    return resultado
+
 @router.post("/{id_mapa}/guardar-layout-completo")
 def guardar_layout_completo(
     id_mapa: int,
@@ -902,93 +953,53 @@ def guardar_layout_completo(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Guarda el layout completo con validación de única 'Salida'."""
+    """
+    Guarda el layout actualizando posiciones de objetos EXISTENTES.
+    Valida que exista exactamente una 'Salida'.
+    """
     mapa = db.query(Mapa).filter(Mapa.id_mapa == id_mapa, Mapa.id_empresa == current_user.id_empresa).first()
     if not mapa:
         raise HTTPException(status_code=404, detail="Mapa no encontrado")
 
     try:
-        # Validación: Debe existir exactamente UNA 'salida' entre los objetos colocados
         tipo_salida = db.query(ObjetoTipo).filter(ObjetoTipo.nombre_tipo.ilike("salida")).first()
         if not tipo_salida:
-            raise HTTPException(status_code=422, detail="Error de configuración: El tipo de objeto 'salida' no existe en el sistema.")
-        id_tipo_salida = tipo_salida.id_tipo
+            raise HTTPException(status_code=500, detail="Error config: Tipo 'salida' no existe.")
 
-        temp_id_to_type = {obj.temp_id: obj.id_tipo for obj in layout_in.objetos_nuevos}
-        ids_reales_usados = [u.id_objeto_real for u in layout_in.ubicaciones if u.id_objeto_real]
-        if ids_reales_usados:
-            objetos_reales_db = db.query(ObjetoMapa.id_objeto, ObjetoMapa.id_tipo).filter(ObjetoMapa.id_objeto.in_(ids_reales_usados)).all()
-            real_id_to_type = {oid: otipo for (oid, otipo) in objetos_reales_db}
-        else:
-            real_id_to_type = {}
+        ids_usados = list(set([u.id_objeto_real for u in layout_in.ubicaciones]))
+        if not ids_usados:
+            raise HTTPException(status_code=422, detail="El mapa no puede estar vacío, debe tener al menos una Salida.")
 
-        celdas_con_salida = 0
+        objetos_db = db.query(ObjetoMapa).filter(ObjetoMapa.id_objeto.in_(ids_usados)).all()
+        tipo_por_objeto = {obj.id_objeto: obj.id_tipo for obj in objetos_db}
+
         objetos_salida_distintos = set()
-        for ubic in layout_in.ubicaciones:
-            tipo_este_objeto = None
-            identificador_unico = None
-            if ubic.ref_objeto_temp_id:
-                tipo_este_objeto = temp_id_to_type.get(ubic.ref_objeto_temp_id)
-                identificador_unico = ubic.ref_objeto_temp_id
-            elif ubic.id_objeto_real:
-                tipo_este_objeto = real_id_to_type.get(ubic.id_objeto_real)
-                identificador_unico = ubic.id_objeto_real
-            if tipo_este_objeto == id_tipo_salida:
-                celdas_con_salida += 1
-                objetos_salida_distintos.add(identificador_unico)
+        for id_obj in ids_usados:
+            if tipo_por_objeto.get(id_obj) == tipo_salida.id_tipo:
+                objetos_salida_distintos.add(id_obj)
 
         if len(objetos_salida_distintos) == 0:
             raise HTTPException(status_code=422, detail="El mapa debe tener obligatoriamente una 'Salida'.")
         if len(objetos_salida_distintos) > 1:
-            raise HTTPException(status_code=422, detail="El mapa solo puede tener una única 'Salida'. Has colocado más de una distinta.")
+            raise HTTPException(status_code=422, detail="El mapa solo puede tener una única 'Salida'.")
 
-        # Procesamiento normal: crear objetos nuevos y muebles
-        id_map = {}
-        for obj_in in layout_in.objetos_nuevos:
-            nuevo_obj = ObjetoMapa(
-                nombre=obj_in.nombre,
-                id_tipo=obj_in.id_tipo,
-                id_empresa=current_user.id_empresa
-            )
-            db.add(nuevo_obj)
-            db.flush()
-            id_map[obj_in.temp_id] = nuevo_obj.id_objeto
-            if obj_in.id_tipo == 2:
-                nuevo_mueble = MuebleReposicion(
-                    id_objeto=nuevo_obj.id_objeto,
-                    filas=obj_in.filas or 3,
-                    columnas=obj_in.columnas or 3,
-                    direccion=(obj_in.direccion.upper() if getattr(obj_in, 'direccion', None) else 'T'),
-                    id_empresa=current_user.id_empresa
-                )
-                db.add(nuevo_mueble)
-                db.flush()
-                punto_reposicion_repository.generar_puntos_mueble(
-                    db,
-                    nuevo_mueble.id_mueble,
-                    nuevo_mueble.filas,
-                    nuevo_mueble.columnas,
-                    current_user.id_empresa
-                )
+        # Limpiar asignaciones previas
+        db.query(UbicacionFisica).filter(UbicacionFisica.id_mapa == id_mapa).update({UbicacionFisica.id_objeto: None})
 
-        # Actualizar ubicaciones
+        # Actualizar nuevas ubicaciones
         for ubic in layout_in.ubicaciones:
-            id_obj_final = None
-            if ubic.ref_objeto_temp_id:
-                id_obj_final = id_map.get(ubic.ref_objeto_temp_id)
-            elif ubic.id_objeto_real:
-                id_obj_final = ubic.id_objeto_real
-            if id_obj_final is not None:
-                celda = db.query(UbicacionFisica).filter(
-                    UbicacionFisica.id_mapa == id_mapa,
-                    UbicacionFisica.x == ubic.x,
-                    UbicacionFisica.y == ubic.y
-                ).first()
-                if celda:
-                    celda.id_objeto = id_obj_final
+            if ubic.id_objeto_real not in tipo_por_objeto:
+                continue
+            celda = db.query(UbicacionFisica).filter(
+                UbicacionFisica.id_mapa == id_mapa,
+                UbicacionFisica.x == ubic.x,
+                UbicacionFisica.y == ubic.y
+            ).first()
+            if celda:
+                celda.id_objeto = ubic.id_objeto_real
 
         db.commit()
-        return {"mensaje": "Layout guardado exitosamente"}
+        return {"mensaje": "Layout actualizado correctamente"}
     except HTTPException as he:
         raise he
     except Exception as e:

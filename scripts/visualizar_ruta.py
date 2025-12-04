@@ -6,7 +6,9 @@ Uso rápido (PowerShell):
   python -m pip install -r requirements.txt
 
   # Ejecutar con token explícito
-  python scripts/visualizar_ruta.py --id 35 --token "TU_TOKEN"
+
+python scripts/visualizar_ruta.py --id 35 --token "TU_TOKEN"
+  
   THIS THIS IS THIS THE THING XDDD
 
   # O usando variable de entorno

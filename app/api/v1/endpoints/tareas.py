@@ -344,6 +344,32 @@ def crear_tarea(
     estado = db.query(EstadoTarea).filter(EstadoTarea.estado_id == tarea.estado_id).first()
     estado_nombre = estado.nombre_estado if estado else ""
 
+    # Generar ruta optimizada automáticamente al crear la tarea
+    ruta_result = None
+    try:
+        servicio = RutaService(db)
+        ruta_result = servicio.optimizar_tarea(
+            id_tarea=tarea.id_tarea,
+            id_empresa=current_user.id_empresa,
+            algoritmo="vecino_mas_cercano"
+        )
+    except Exception as e:
+        # No bloquear creación de tarea si falla la optimización
+        print(f"[WARN] Fallo al optimizar ruta de tarea {tarea.id_tarea}: {str(e)}")
+
+    # Preparar respuesta serializable para la ruta
+    ruta_out = None
+    if ruta_result is not None:
+        try:
+            ruta_out = {
+                "id_ruta": getattr(ruta_result, "id_ruta", None),
+                "algoritmo_usado": getattr(ruta_result, "algoritmo_usado", None),
+                "tiempo_estimado": getattr(ruta_result, "tiempo_estimado", None),
+                "distancia_total": getattr(ruta_result, "distancia_total", None),
+            }
+        except Exception:
+            ruta_out = None
+
     return {
         "mensaje": "Tarea creada exitosamente",
         "tarea": {
@@ -354,7 +380,8 @@ def crear_tarea(
             "id_reponedor": tarea.id_reponedor,
             "detalle": detalles
         },
-        "asignada": tarea.id_reponedor is not None
+        "asignada": tarea.id_reponedor is not None,
+        "ruta": ruta_out
     }
 
 
