@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
 from app.models.usuario import Usuario, RolEnum
@@ -880,6 +880,57 @@ def listar_objetos_por_mapa(
     tipos_cache = {}
     resultado = []
     for obj in objetos:
+        if obj.id_tipo not in tipos_cache:
+            tipo = db.query(ObjetoTipo).filter(ObjetoTipo.id_tipo == obj.id_tipo).first()
+            tipos_cache[obj.id_tipo] = tipo
+        tipo = tipos_cache.get(obj.id_tipo)
+        resultado.append(ObjetoListadoOut(
+            id_objeto=obj.id_objeto,
+            nombre=obj.nombre,
+            tipo=ObjetoTipoListadoOut(
+                id=tipo.id_tipo if tipo else 0,
+                nombre=tipo.nombre_tipo if tipo else "",
+                caminable=tipo.caminable if tipo else None
+            )
+        ))
+    return resultado
+
+
+
+@router.get("/mapa/{id_mapa}/objetos-disponibles", response_model=List[ObjetoListadoOut])
+def listar_objetos_disponibles_para_mapa(
+    id_mapa: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Validar que el mapa exista y pertenezca a la empresa del usuario
+    mapa = db.query(Mapa).filter(
+        Mapa.id_mapa == id_mapa,
+        Mapa.id_empresa == current_user.id_empresa
+    ).first()
+    if not mapa:
+        raise HTTPException(status_code=404, detail="Mapa no encontrado para tu empresa.")
+
+    subquery_ocupados = (
+        db.query(UbicacionFisica.id_objeto)
+        .filter(
+            UbicacionFisica.id_mapa == id_mapa,
+            UbicacionFisica.id_objeto.isnot(None)
+        )
+        .distinct()
+    )
+
+    objetos_disponibles = (
+        db.query(ObjetoMapa)
+        .filter(
+            ObjetoMapa.id_empresa == current_user.id_empresa,
+            ~ObjetoMapa.id_objeto.in_(subquery_ocupados)
+        )
+        .all()
+    )
+    tipos_cache = {}
+    resultado = []
+    for obj in objetos_disponibles:
         if obj.id_tipo not in tipos_cache:
             tipo = db.query(ObjetoTipo).filter(ObjetoTipo.id_tipo == obj.id_tipo).first()
             tipos_cache[obj.id_tipo] = tipo
