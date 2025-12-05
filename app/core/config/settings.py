@@ -13,6 +13,9 @@ class Settings(BaseSettings):
   ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hora para access token
   REFRESH_TOKEN_EXPIRE_DAYS: int = 60  # 60 días para refresh token
 
+  # Configuración de límites de tareas
+  MAX_TAREAS_PENDIENTES_POR_REPONEDOR: int = 5  # Máximo de tareas pendientes por reponedor
+
   # Selección de origen de base de datos
   DATABASE_TARGET: str = "local"  # Opciones: "local", "azure"
 

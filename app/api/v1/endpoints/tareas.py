@@ -282,6 +282,21 @@ def crear_tarea(
         reponedor = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == tarea_data.id_reponedor).first()
         if not reponedor or reponedor.rol.nombre_rol.lower() != "reponedor":
             raise HTTPException(status_code=422, detail="El reponedor no existe o no tiene el rol correcto.")
+        
+        # Validar límite de tareas pendientes del reponedor
+        from app.core.config.settings import settings
+        estado_pendiente_obj = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == "pendiente").first()
+        if estado_pendiente_obj:
+            tareas_pendientes_count = db.query(Tarea).filter(
+                Tarea.id_reponedor == reponedor.id_usuario,
+                Tarea.estado_id == estado_pendiente_obj.estado_id
+            ).count()
+            
+            if tareas_pendientes_count >= settings.MAX_TAREAS_PENDIENTES_POR_REPONEDOR:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"El reponedor {reponedor.nombre} ya tiene {tareas_pendientes_count} tareas pendientes (límite: {settings.MAX_TAREAS_PENDIENTES_POR_REPONEDOR}). No se puede crear más tareas para este reponedor. Asigne a otro usuario o espere a que complete algunas tareas."
+                )
 
     # Asignar supervisor correctamente según el rol
     if current_user.rol.nombre_rol.lower() == "supervisor":
@@ -510,18 +525,20 @@ def asignar_reponedor_a_tarea(
         if not supervision:
             raise HTTPException(status_code=403, detail="No tienes autoridad sobre este reponedor.")
 
-    # Validar tareas activas del reponedor
-    estados_activos = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado.in_(["pendiente", "en progreso"]))
-    ids_estados = [e.estado_id for e in estados_activos]
-    tarea_activa = db.query(Tarea).filter(
-        Tarea.id_reponedor == reponedor.id_usuario,
-        Tarea.estado_id.in_(ids_estados)
-    ).first()
-    if tarea_activa:
-        raise HTTPException(
-            status_code=409,
-            detail=f"El reponedor ya tiene una tarea en curso (ID: {tarea_activa.id_tarea}). Asigne a otro usuario o espere a que finalice."
-        )
+    # Validar límite de tareas pendientes del reponedor
+    from app.core.config.settings import settings
+    estado_pendiente_obj = db.query(EstadoTarea).filter(EstadoTarea.nombre_estado == "pendiente").first()
+    if estado_pendiente_obj:
+        tareas_pendientes_count = db.query(Tarea).filter(
+            Tarea.id_reponedor == reponedor.id_usuario,
+            Tarea.estado_id == estado_pendiente_obj.estado_id
+        ).count()
+        
+        if tareas_pendientes_count >= settings.MAX_TAREAS_PENDIENTES_POR_REPONEDOR:
+            raise HTTPException(
+                status_code=409,
+                detail=f"El reponedor ya tiene {tareas_pendientes_count} tareas pendientes (límite: {settings.MAX_TAREAS_PENDIENTES_POR_REPONEDOR}). Asigne a otro usuario o espere a que complete algunas tareas."
+            )
 
     # Asignar reponedor y cambiar estado a 'pendiente'
     tarea.id_reponedor = reponedor.id_usuario
