@@ -469,8 +469,8 @@ def suspender_empresa(
     # Guardar estado anterior
     estado_anterior = empresa.estado
     
-    # Suspender
-    empresa.estado = "suspendido"
+    # Suspender (usar "inactivo" ya que "suspendido" no está en el constraint de BD)
+    empresa.estado = "inactivo"
     db.commit()
     
     # Auditar
@@ -482,7 +482,7 @@ def suspender_empresa(
         id_entidad=id_empresa,
         nombre_entidad=empresa.nombre_empresa,
         datos_anteriores={"estado": estado_anterior, "motivo": None},
-        datos_nuevos={"estado": "suspendido", "motivo": motivo}
+        datos_nuevos={"estado": "inactivo", "motivo": motivo}
     )
     
     return {"message": f"Empresa {empresa.nombre_empresa} suspendida correctamente"}

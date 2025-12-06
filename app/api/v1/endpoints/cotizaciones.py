@@ -167,6 +167,8 @@ def actualizar_cotizacion(
     **SUPERADMIN** - Actualiza una cotización
     
     Permite actualizar precio, features, estado, notas internas, etc.
+    Si se actualizan campos que influyen en el precio (cantidad_supervisores, 
+    cantidad_reponedores, cantidad_productos), se recalcula automáticamente el precio_sugerido.
     """
     require_super_admin(current_user)
     
@@ -180,10 +182,33 @@ def actualizar_cotizacion(
             detail=f"Cotización {id_cotizacion} no encontrada"
         )
     
-    # Actualizar
+    # Preparar datos de actualización
     update_data = cotizacion_update.model_dump(exclude_unset=True)
     update_data["atendido_por"] = current_user.id_usuario
     
+    # Verificar si se actualizaron campos que influyen en el precio
+    campos_precio = ['cantidad_supervisores', 'cantidad_reponedores', 'cantidad_productos', 'integraciones_requeridas']
+    if any(campo in update_data for campo in campos_precio):
+        # Obtener valores actuales o actualizados
+        cantidad_supervisores = update_data.get('cantidad_supervisores', cotizacion.cantidad_supervisores)
+        cantidad_reponedores = update_data.get('cantidad_reponedores', cotizacion.cantidad_reponedores)
+        cantidad_productos = update_data.get('cantidad_productos', cotizacion.cantidad_productos)
+        integraciones_str = update_data.get('integraciones_requeridas', cotizacion.integraciones_requeridas)
+        
+        # Recalcular precio sugerido
+        calculadora = CalculadoraPreciosService()
+        cotizacion_calculada = calculadora.generar_cotizacion_completa(
+            cantidad_supervisores=cantidad_supervisores,
+            cantidad_reponedores=cantidad_reponedores,
+            cantidad_productos=cantidad_productos,
+            integraciones=integraciones_str.split(",") if integraciones_str else None,
+        )
+        
+        # Actualizar precio_sugerido con el nuevo cálculo
+        update_data["precio_sugerido"] = cotizacion_calculada["precio_sugerido"]
+        update_data["features_sugeridos"] = cotizacion_calculada["features_sugeridos"]
+    
+    # Actualizar cotización
     cotizacion_actualizada = cotizacion_repo.update(db, id_cotizacion, update_data)
     
     return cotizacion_actualizada

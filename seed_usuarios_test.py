@@ -26,7 +26,7 @@ def seed_usuarios():
             db.commit()
         
         # Contraseña de prueba: Admin123!@
-        password_hash = get_password_hash("Admin123!@")
+        password_hash = get_password_hash("admin123")
         
         usuarios_test = [
             # SuperAdmin (acceso global)

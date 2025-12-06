@@ -79,6 +79,7 @@ class FacturaResponse(FacturaBase):
 class FacturaListItem(BaseModel):
     """Schema resumido para listar facturas"""
     id_factura: int
+    id_empresa: int
     numero_factura: Optional[str]
     fecha_emision: date
     fecha_vencimiento: date

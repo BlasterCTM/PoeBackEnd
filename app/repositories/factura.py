@@ -1,5 +1,5 @@
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, func
 from app.models.factura import Factura
 from app.repositories.base import BaseRepository
@@ -44,7 +44,7 @@ class FacturaRepository(BaseRepository[Factura]):
         estado: Optional[str] = None
     ) -> List[Factura]:
         """Obtiene todas las facturas con filtros opcionales"""
-        query = db.query(Factura)
+        query = db.query(Factura).options(joinedload(Factura.empresa))
         
         if estado:
             query = query.filter(Factura.estado == estado)
@@ -210,3 +210,47 @@ class FacturaRepository(BaseRepository[Factura]):
             db.commit()
         
         return count
+    
+    def generar_pdf(self, factura: Factura) -> str:
+        """Genera un PDF simple de la factura y retorna la ruta del archivo"""
+        try:
+            from fpdf import FPDF
+            import tempfile
+            import os
+        except ImportError:
+            raise RuntimeError("Debes instalar fpdf: pip install fpdf")
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=16, style='B')
+        pdf.cell(200, 10, txt=f"FACTURA N° {factura.numero_factura}", ln=True, align='C')
+        pdf.ln(10)
+        
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt=f"ID Empresa: {factura.id_empresa}", ln=True)
+        pdf.cell(200, 10, txt=f"ID Plan: {factura.id_plan}", ln=True)
+        pdf.cell(200, 10, txt=f"Fecha emisión: {factura.fecha_emision}", ln=True)
+        pdf.cell(200, 10, txt=f"Fecha vencimiento: {factura.fecha_vencimiento}", ln=True)
+        pdf.ln(5)
+        
+        pdf.set_font("Arial", size=12, style='B')
+        pdf.cell(200, 10, txt=f"Subtotal: ${factura.subtotal:,}", ln=True)
+        pdf.cell(200, 10, txt=f"IVA: ${factura.iva:,}", ln=True)
+        pdf.cell(200, 10, txt=f"TOTAL: ${factura.total:,}", ln=True)
+        pdf.ln(5)
+        
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt=f"Estado: {factura.estado.upper()}", ln=True)
+        
+        if factura.descripcion:
+            pdf.ln(5)
+            pdf.multi_cell(200, 10, txt=f"Descripción: {factura.descripcion}")
+        
+        if factura.periodo_facturado:
+            pdf.cell(200, 10, txt=f"Periodo: {factura.periodo_facturado}", ln=True)
+        
+        # Usar directorio temporal del sistema (funciona en Windows y Linux)
+        temp_dir = tempfile.gettempdir()
+        pdf_path = os.path.join(temp_dir, f"factura_{factura.id_factura}.pdf")
+        pdf.output(pdf_path)
+        return pdf_path
