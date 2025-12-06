@@ -44,9 +44,24 @@ def crear_producto(
     if current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
         raise HTTPException(status_code=403, detail="No tienes permisos para crear productos")
     
+    # Debug: verificar usuario y validación
+    print(f"[DEBUG] Creando producto - Usuario: {current_user.correo}, Rol: {current_user.rol.nombre_rol}, ID Empresa: {current_user.id_empresa}")
+    print(f"[DEBUG] ¿Es SuperAdmin?: {is_super_admin(current_user)}")
+    
     # Validar límites del plan antes de crear producto
     if not is_super_admin(current_user):
-        validar_limite_plan("productos", current_user.id_empresa, db)
+        print(f"[DEBUG] Validando límites para empresa {current_user.id_empresa}")
+        try:
+            validar_limite_plan("productos", current_user.id_empresa, db)
+            print(f"[DEBUG] Validación de límites pasó correctamente")
+        except HTTPException as e:
+            print(f"[DEBUG] HTTPException en validación: {e.status_code} - {e.detail}")
+            raise
+        except Exception as e:
+            print(f"[DEBUG] Error inesperado en validación: {type(e).__name__} - {str(e)}")
+            raise
+    else:
+        print(f"[DEBUG] SuperAdmin detectado - saltando validación de límites")
     
     # Generar código único si no se proporciona
     codigo_unico = producto.codigo_unico or str(uuid.uuid4())[:8].upper()

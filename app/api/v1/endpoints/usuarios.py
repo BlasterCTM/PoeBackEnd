@@ -15,6 +15,8 @@ from app.core.security.password import verify_password
 from datetime import timedelta
 from app.core.config.settings import settings
 from app.models.usuario import Usuario, RolEnum
+from app.api.dependencies.plan_limites import validar_limite_plan
+from app.utils.tenant import is_super_admin
 
 router = APIRouter(
     prefix="/usuarios",

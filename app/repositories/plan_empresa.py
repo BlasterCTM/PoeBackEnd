@@ -109,7 +109,9 @@ class PlanEmpresaRepository(BaseRepository[PlanEmpresa]):
                 "mensaje": "Sin límite para este recurso"
             }
         
-        excedido = cantidad_actual >= limite
+        # Excedido solo si la cantidad actual es MAYOR (no igual) al límite
+        # Esto permite usar hasta el límite (ej: si límite=1, se puede tener 1 usuario)
+        excedido = cantidad_actual > limite
         disponible = max(0, limite - cantidad_actual)
         porcentaje_uso = (cantidad_actual / limite * 100) if limite > 0 else 0
         
@@ -121,7 +123,7 @@ class PlanEmpresaRepository(BaseRepository[PlanEmpresa]):
             "disponible": disponible,
             "porcentaje_uso": round(porcentaje_uso, 2),
             "excedido": excedido,
-            "mensaje": f"Límite alcanzado: {cantidad_actual}/{limite}" if excedido else "Dentro del límite"
+            "mensaje": f"Límite excedido: {cantidad_actual}/{limite}" if excedido else "Dentro del límite"
         }
     
     def tiene_feature(self, db: Session, id_empresa: int, feature: str) -> bool:
@@ -152,22 +154,38 @@ class PlanEmpresaRepository(BaseRepository[PlanEmpresa]):
         Returns:
             dict con uso de recursos
         """
-        from app.models.usuario import Usuario
+        from app.models.usuario import Usuario, Rol, RolEnum
         from app.models.producto import Producto
         from app.models.punto_reposicion import PuntoReposicion
         
-        # Contar usuarios por rol
+        # Contar usuarios por rol usando IDs específicos
+        # IMPORTANTE: Solo se cuentan Supervisores y Reponedores
+        # Se EXCLUYEN del conteo: Administrador (id=1) y SuperAdmin (id=4)
+        # IDs de roles: 1=Administrador, 2=Supervisor, 3=Reponedor, 4=SuperAdmin
         from sqlalchemy import func
+        
+        # Contar Supervisores (rol_id = 2)
         supervisores = db.query(func.count(Usuario.id_usuario)).filter(
-            and_(Usuario.id_empresa == id_empresa, Usuario.rol_id == 2)  # Supervisor
+            and_(
+                Usuario.id_empresa == id_empresa,
+                Usuario.rol_id == 2  # Supervisor
+            )
         ).scalar() or 0
         
+        # Contar Reponedores (rol_id = 3)
         reponedores = db.query(func.count(Usuario.id_usuario)).filter(
-            and_(Usuario.id_empresa == id_empresa, Usuario.rol_id == 4)  # Reponedor
+            and_(
+                Usuario.id_empresa == id_empresa,
+                Usuario.rol_id == 3  # Reponedor
+            )
         ).scalar() or 0
         
+        # Contar solo productos activos (no eliminados lógicamente)
         productos = db.query(func.count(Producto.id_producto)).filter(
-            Producto.id_empresa == id_empresa
+            and_(
+                Producto.id_empresa == id_empresa,
+                Producto.estado == "activo"
+            )
         ).scalar() or 0
         
         puntos = db.query(func.count(PuntoReposicion.id_punto)).filter(

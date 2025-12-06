@@ -65,19 +65,27 @@ def validar_limite_plan(
     
     if not campo_uso or not campo_limite:
         # Recurso no limitado por plan
+        print(f"[DEBUG validar_limite_plan] Recurso {recurso} no tiene mapeo - retornando")
         return
     
     cantidad_actual = uso_recursos.get(campo_uso, 0)
     limite_plan = getattr(plan, campo_limite, None)
     
+    print(f"[DEBUG validar_limite_plan] Recurso: {recurso}, Cantidad Actual: {cantidad_actual}, Límite Plan: {limite_plan}")
+    
     # Si el límite es None, significa que es ilimitado
     if limite_plan is None:
+        print(f"[DEBUG validar_limite_plan] Límite es None (ilimitado) - retornando")
         return
     
     # Validar si se puede crear uno más (cantidad_actual + 1)
+    print(f"[DEBUG validar_limite_plan] Validando {cantidad_actual + 1} items contra límite {limite_plan}")
     validacion = plan_repo.validar_limite(db, id_empresa, recurso, cantidad_actual + 1)
     
+    print(f"[DEBUG validar_limite_plan] Resultado validación: {validacion}")
+    
     if validacion.get("excedido"):
+        print(f"[DEBUG validar_limite_plan] LÍMITE EXCEDIDO - lanzando excepción 402")
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={
@@ -90,6 +98,8 @@ def validar_limite_plan(
                 "sugerencia": f"Su plan permite {limite_plan} {recurso}. Actualmente tiene {cantidad_actual}. Para crear más {recurso}, debe actualizar su plan. Contacte al superusuario o administrador de su empresa."
             }
         )
+    else:
+        print(f"[DEBUG validar_limite_plan] Validación pasó - permitiendo creación")
 
 
 class ValidarLimitePlanDependency:
