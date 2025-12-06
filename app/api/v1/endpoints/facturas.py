@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -77,7 +78,23 @@ def listar_facturas(
         estado=estado.value if estado else None
     )
     
-    return facturas
+    # Construir respuesta con nombre de empresa desde la relación
+    resultado = []
+    for factura in facturas:
+        factura_dict = {
+            "id_factura": factura.id_factura,
+            "id_empresa": factura.id_empresa,
+            "numero_factura": factura.numero_factura,
+            "fecha_emision": factura.fecha_emision,
+            "fecha_vencimiento": factura.fecha_vencimiento,
+            "total": factura.total,
+            "estado": factura.estado,
+            "periodo_facturado": factura.periodo_facturado,
+            "nombre_empresa": factura.empresa.nombre_empresa if factura.empresa else None
+        }
+        resultado.append(FacturaListItem(**factura_dict))
+    
+    return resultado
 
 
 @router.get("/pendientes", response_model=List[FacturaListItem])
@@ -148,6 +165,28 @@ def obtener_factura(
         validate_tenant_access(current_user, factura.id_empresa, "ver esta factura")
     
     return factura
+
+
+@router.get("/{id_factura}/pdf", response_class=FileResponse)
+def descargar_pdf_factura(
+    id_factura: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Descarga el PDF de la factura por ID.
+    """
+    factura_repo = FacturaRepository()
+    factura = factura_repo.get_by_id(db, id_factura)
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    # Validar acceso
+    if not is_super_admin(current_user):
+        validate_tenant_access(current_user, factura.id_empresa, "ver esta factura")
+    
+    pdf_path = factura_repo.generar_pdf(factura)
+    return FileResponse(pdf_path, media_type="application/pdf", filename=f"Factura_{id_factura}.pdf")
 
 
 @router.post("/generar", response_model=FacturaResponse, status_code=status.HTTP_201_CREATED)

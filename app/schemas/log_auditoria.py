@@ -29,6 +29,7 @@ class LogAuditoriaResponse(LogAuditoriaBase):
     id_log: int
     id_usuario: int
     nombre_usuario: str
+    usuario_rol: Optional[str] = None
     datos_anteriores: Optional[Dict[str, Any]] = None
     datos_nuevos: Optional[Dict[str, Any]] = None
     ip_origen: Optional[str] = None

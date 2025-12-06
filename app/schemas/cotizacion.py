@@ -51,6 +51,20 @@ class CotizacionCreate(CotizacionBase):
 
 class CotizacionUpdate(BaseModel):
     """Schema para actualizar cotización (admin POE)"""
+    # Datos de contacto (editables)
+    nombre_contacto: Optional[str] = Field(None, min_length=1, max_length=100, description="Nombre del contacto")
+    empresa: Optional[str] = Field(None, min_length=1, max_length=100, description="Nombre de la empresa")
+    email: Optional[EmailStr] = Field(None, description="Email del contacto")
+    telefono: Optional[str] = Field(None, max_length=20, description="Teléfono de contacto")
+    cargo: Optional[str] = Field(None, max_length=100, description="Cargo del contacto")
+    
+    # Parámetros que influyen en el precio (editables)
+    cantidad_supervisores: Optional[int] = Field(None, gt=0, description="Cantidad de supervisores")
+    cantidad_reponedores: Optional[int] = Field(None, gt=0, description="Cantidad de reponedores")
+    cantidad_productos: Optional[int] = Field(None, gt=0, description="Cantidad de productos")
+    integraciones_requeridas: Optional[str] = Field(None, description="Integraciones requeridas")
+    comentarios: Optional[str] = Field(None, description="Comentarios adicionales")
+    
     # Cotización generada
     precio_sugerido: Optional[int] = Field(None, gt=0, description="Precio sugerido en CLP")
     precio_final: Optional[int] = Field(None, gt=0, description="Precio final acordado en CLP")

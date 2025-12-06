@@ -194,7 +194,7 @@ class LogAuditoriaRepository:
         filtros: LogAuditoriaFiltros,
         skip: int = 0,
         limit: int = 50
-    ) -> List[LogAuditoria]:
+    ) -> List[dict]:
         """
         Lista logs aplicando filtros con paginación
         
@@ -205,9 +205,14 @@ class LogAuditoriaRepository:
             limit: Límite de registros
             
         Returns:
-            Lista de logs
+            Lista de logs con información de usuario
         """
-        query = db.query(LogAuditoria)
+        from sqlalchemy.orm import joinedload
+        from app.models.usuario import Usuario
+        
+        query = db.query(LogAuditoria).options(
+            joinedload(LogAuditoria.usuario).joinedload(Usuario.rol)
+        )
         
         # Aplicar filtros
         if filtros.id_usuario:
@@ -235,7 +240,33 @@ class LogAuditoriaRepository:
         # Ordenar y paginar
         logs = query.order_by(desc(LogAuditoria.fecha)).offset(skip).limit(limit).all()
         
-        return logs
+        # Construir respuesta con información del usuario
+        result = []
+        for log in logs:
+            # Obtener información del usuario
+            usuario_rol = None
+            
+            if log.usuario and log.usuario.rol:
+                usuario_rol = log.usuario.rol.nombre_rol
+            
+            log_dict = {
+                "id_log": log.id_log,
+                "id_usuario": log.id_usuario,
+                "nombre_usuario": log.nombre_usuario,
+                "usuario_rol": usuario_rol,
+                "accion": log.accion,
+                "entidad": log.entidad,
+                "id_entidad": log.id_entidad,
+                "nombre_entidad": log.nombre_entidad,
+                "datos_anteriores": log.datos_anteriores,
+                "datos_nuevos": log.datos_nuevos,
+                "ip_origen": log.ip_origen,
+                "user_agent": log.user_agent,
+                "fecha": log.fecha
+            }
+            result.append(log_dict)
+        
+        return result
     
     def listar_acciones_unicas(self, db: Session) -> List[str]:
         """
