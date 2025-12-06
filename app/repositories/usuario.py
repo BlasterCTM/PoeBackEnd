@@ -102,3 +102,8 @@ class UsuarioRepository(BaseRepository[Usuario]):
         db.commit()
         db.refresh(usuario)
         return usuario
+
+    def delete_usuario(self, db: Session, usuario: Usuario) -> None:
+        """Elimina físicamente un usuario existente."""
+        db.delete(usuario)
+        db.commit()

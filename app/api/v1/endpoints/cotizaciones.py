@@ -317,11 +317,12 @@ def convertir_cotizacion_en_cliente(
         nueva_empresa = empresa_repo.create_empresa(db, empresa_data)
         
         # 2. Crear plan personalizado
+        # Usar valores de conversion_data, o fallback a los valores de la cotización
         plan_data = {
             "id_empresa": nueva_empresa.id_empresa,
-            "cantidad_supervisores": conversion_data.cantidad_supervisores,
-            "cantidad_reponedores": conversion_data.cantidad_reponedores,
-            "cantidad_productos": conversion_data.cantidad_productos,
+            "cantidad_supervisores": conversion_data.cantidad_supervisores or cotizacion.cantidad_supervisores,
+            "cantidad_reponedores": conversion_data.cantidad_reponedores or cotizacion.cantidad_reponedores,
+            "cantidad_productos": conversion_data.cantidad_productos or cotizacion.cantidad_productos,
             "cantidad_puntos": conversion_data.cantidad_puntos,
             "precio_mensual": conversion_data.precio_mensual,
             "features": conversion_data.features,
