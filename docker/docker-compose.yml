@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: poe-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_TARGET=azure
+      - AZURE_POSTGRES_HOST=${AZURE_POSTGRES_HOST}
+      - AZURE_POSTGRES_PORT=${AZURE_POSTGRES_PORT}
+      - AZURE_POSTGRES_USER=${AZURE_POSTGRES_USER}
+      - AZURE_POSTGRES_PASSWORD=${AZURE_POSTGRES_PASSWORD}
+      - AZURE_POSTGRES_DB=${AZURE_POSTGRES_DB}
+      - SECRET_KEY=${SECRET_KEY}
+      - REFRESH_SECRET_KEY=${REFRESH_SECRET_KEY}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=60
+      - REFRESH_TOKEN_EXPIRE_DAYS=60
+      - MAX_TAREAS_PENDIENTES_POR_REPONEDOR=5
+    restart: unless-stopped
+    networks:
+      - poe-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  poe-network:
+    driver: bridge
