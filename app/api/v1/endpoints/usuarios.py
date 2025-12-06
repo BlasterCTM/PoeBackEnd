@@ -78,6 +78,13 @@ async def crear_usuario(
                 detail=f"El rol {usuario.rol.value} no existe"
             )
         
+        # Validar límites del plan según el rol (solo si no es SuperAdmin)
+        if not is_super_admin(current_user):
+            if usuario.rol.value == RolEnum.SUPERVISOR.value:
+                validar_limite_plan("supervisores", current_user.id_empresa, db)
+            elif usuario.rol.value == RolEnum.REPONEDOR.value:
+                validar_limite_plan("reponedores", current_user.id_empresa, db)
+        
         # Crear el usuario (heredando id_empresa del usuario autenticado)
         nuevo_usuario = usuario_repo.create_usuario(
             db=db,

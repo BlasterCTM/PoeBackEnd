@@ -8,6 +8,9 @@ from app.models.usuario import Usuario
 from app.models.punto_reposicion import PuntoReposicion
 from app.models.detalle_tarea import DetalleTarea
 from app.schemas.punto_reposicion import PuntoReposicionCreate
+from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.plan_limites import validar_limite_plan
+from app.utils.tenant import is_super_admin
 from app.core.security.auth import get_current_user
 
 router = APIRouter()
@@ -46,6 +49,10 @@ def crear_punto_reposicion(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
+    # Validar límites del plan antes de crear punto
+    if not is_super_admin(current_user):
+        validar_limite_plan("puntos", current_user.id_empresa, db)
+    
     # Verifica si ya existe un punto igual en el mismo mueble, nivel y estantería EN LA MISMA EMPRESA
     existente = db.query(PuntoReposicion).filter_by(
         id_mueble=punto.id_mueble,

@@ -10,6 +10,8 @@ from app.repositories.usuario import UsuarioRepository
 from app.repositories.supervision import SupervisionRepository
 from app.core.security.auth import get_current_user
 from app.models.usuario import RolEnum, Usuario
+from app.api.dependencies.plan_limites import validar_limite_plan
+from app.utils.tenant import is_super_admin
 
 router = APIRouter(
     prefix="/supervisor",
@@ -51,6 +53,10 @@ async def registrar_reponedor(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al obtener el rol de reponedor"
         )
+    
+    # Validar límites del plan antes de crear reponedor
+    if not is_super_admin(current_user):
+        validar_limite_plan("reponedores", current_user.id_empresa, db)
     
     try:
         # Crear el reponedor con rol predefinido Y LA EMPRESA DEL SUPERVISOR

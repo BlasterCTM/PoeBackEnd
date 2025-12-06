@@ -13,6 +13,8 @@ from app.core.database.database import get_db
 from app.api.dependencies.auth import get_current_user
 from app.models.usuario import Usuario, RolEnum
 from app.models.usuario import Usuario as UsuarioModel
+from app.api.dependencies.plan_limites import validar_limite_plan
+from app.utils.tenant import is_super_admin
 from fastapi import Response
 import uuid
 from app.repositories.punto_reposicion import (
@@ -41,6 +43,11 @@ def crear_producto(
 ):
     if current_user.rol.nombre_rol != RolEnum.ADMINISTRADOR.value:
         raise HTTPException(status_code=403, detail="No tienes permisos para crear productos")
+    
+    # Validar límites del plan antes de crear producto
+    if not is_super_admin(current_user):
+        validar_limite_plan("productos", current_user.id_empresa, db)
+    
     # Generar código único si no se proporciona
     codigo_unico = producto.codigo_unico or str(uuid.uuid4())[:8].upper()
     try:
