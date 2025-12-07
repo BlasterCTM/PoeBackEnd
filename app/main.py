@@ -25,27 +25,29 @@ app = FastAPI(
     description=settings.PROJECT_DESCRIPTION,
     version=settings.PROJECT_VERSION,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    redirect_slashes=False  # Evita redirecciones que causan problemas CORS
 )
 
-# Configurar CORS
-origins = [
-    "http://localhost:3000",  # Para React
-    "http://localhost:4200",  # Para Angular
-    "http://127.0.0.1:5500",  # Para VS Code Live Server
-    "http://localhost:5173",  # Para Vite
+# Configurar CORS desde variable de entorno o usar defaults
+cors_origins = settings.CORS_ORIGINS.split(",") if settings.CORS_ORIGINS else [
+    "http://localhost:3000",
+    "http://localhost:4200",
+    "http://127.0.0.1:5500",
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:8081",
     "http://localhost:8080",
-    "http://localhost:8082"   # Para FastAPI en desarrollo
+    "http://localhost:8082"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Incluir los routers
