@@ -19,19 +19,7 @@ class CalculadoraPreciosService:
     # CONFIGURACIÓN DE PRECIOS BASE (CLP)
     # ============================================
     
-    # Precio base mensual (fijo por supermercado)
-    PRECIO_BASE_MENSUAL = 150000  # $150k CLP base por supermercado
-    
-    # Costos por recurso
-    COSTO_POR_SUPERVISOR = 20000   # $20k CLP por supervisor
-    COSTO_POR_REPONEDOR = 10000    # $10k CLP por reponedor
-    
-    # Costos opcionales
-    COSTO_POR_1000_PRODUCTOS = 10000  # $10k CLP por cada 1000 productos
-    COSTO_POR_100_PUNTOS = 5000       # $5k CLP por cada 100 puntos
-    
-    # Descuento por pago anual
-    DESCUENTO_ANUAL = 0.15         # 15% descuento en pago anual
+    # 15% descuento en pago anual
     
     
     @staticmethod

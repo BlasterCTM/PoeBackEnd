@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.config.settings import settings
 from app.core.database.database import init_db
+from app.core.key_vault import init_key_vault, get_secret
 from app.api.dependencies.database import get_database
 from app.api.v1.endpoints import usuarios, supervisor, productos, mapa, tareas, puntos, muebles, empresas
 from fastapi import Depends, HTTPException, status
@@ -38,7 +39,8 @@ cors_origins = settings.CORS_ORIGINS.split(",") if settings.CORS_ORIGINS else [
     "http://127.0.0.1:5173",
     "http://localhost:8081",
     "http://localhost:8080",
-    "http://localhost:8082"
+    "http://localhost:8082",
+    "https://poe-frontend-app.azurewebsites.net"
 ]
 
 app.add_middleware(
@@ -83,6 +85,40 @@ app.include_router(predicciones.router, prefix="/api/v1", tags=["Predicciones ML
 # Inicializar la base de datos al arrancar la aplicación
 @app.on_event("startup")
 async def startup_event():
+    # Inicializar Key Vault (si está configurado) antes de inicializar la DB
+    try:
+        await init_key_vault()
+    except Exception:
+        # No bloquear el arranque si Key Vault no está disponible
+        pass
+
+    # Si Key Vault contiene credenciales, intentar aplicarlas a la configuración
+    try:
+        # Intentamos leer nombres comunes usados en settings
+        azure_pw = await get_secret("AZURE_POSTGRES_PASSWORD")
+        pw = await get_secret("POSTGRES_PASSWORD")
+        secret_key = await get_secret("SECRET_KEY")
+
+        if azure_pw:
+            try:
+                settings.AZURE_POSTGRES_PASSWORD = azure_pw
+            except Exception:
+                pass
+        if pw:
+            try:
+                settings.POSTGRES_PASSWORD = pw
+            except Exception:
+                pass
+        if secret_key:
+            try:
+                settings.SECRET_KEY = secret_key
+            except Exception:
+                pass
+    except Exception:
+        # No fallar si no se pueden leer secretos ahora
+        pass
+
+    # Inicializar DB y datos base
     init_db()
     init_estados_tarea()
 

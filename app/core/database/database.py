@@ -47,5 +47,7 @@ class Database:
 # Instancia global de la base de datos
 db = Database()
 Base = db.Base
+engine = db.engine
+SessionLocal = db.SessionLocal
 get_db = db.get_db
 init_db = db.init_db

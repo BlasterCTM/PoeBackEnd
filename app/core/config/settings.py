@@ -23,7 +23,7 @@ class Settings(BaseSettings):
   # Configuración de aplicación
   ENVIRONMENT: str = "development"
   DEBUG: bool = True
-  CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+  CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:8081,http://localhost:8082"
   API_V1_PREFIX: str = "/api/v1"
   VERSION: str = "1.0.0"
   LOG_LEVEL: str = "INFO"

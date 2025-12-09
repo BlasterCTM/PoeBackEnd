@@ -80,12 +80,13 @@ from app.models.tarea import Tarea
 from app.models.mueble_reposicion import MuebleReposicion
 from app.models.objeto_mapa import ObjetoMapa
 from app.models.ubicacion_fisica import UbicacionFisica
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pydantic import BaseModel
 from app.repositories.supervision import SupervisionRepository
 import logging
 import traceback
-from pytz import timezone
+from app.utils.timezone import now_utc, to_local
+from zoneinfo import ZoneInfo
 from fastapi import Query
 from typing import Optional
 from app.schemas.ruta_optimizada import (
@@ -316,7 +317,8 @@ def crear_tarea(
 
     # Crear la tarea principal (CON id_empresa)
     tarea = Tarea(
-        fecha_creacion=date.today(),
+        # Keep DB column as Date but derive date from UTC to avoid TZ issues
+        fecha_creacion=now_utc().date(),
         estado_id=tarea_data.estado_id,
         id_supervisor=id_supervisor,
         id_reponedor=tarea_data.id_reponedor,
@@ -909,14 +911,13 @@ def completar_tarea(
     if not confirmado:
         raise HTTPException(status_code=400, detail="Se requiere confirmación para completar la tarea.")
     # Actualizar tarea
-    tz_utc = timezone("UTC")
-    tz_chile = timezone("America/Santiago")
-    ahora_utc = datetime.now(tz_utc)
+    # Use timezone-aware UTC datetime for completion, and convert to local for display
+    ahora_utc = now_utc()
     tarea.estado_id = estado_completada.estado_id
     tarea.fecha_hora_completada = ahora_utc
     db.commit()
     db.refresh(tarea)
-    fecha_local = tarea.fecha_hora_completada.astimezone(tz_chile)
+    fecha_local = to_local(tarea.fecha_hora_completada, "America/Santiago")
     return {
         "mensaje": "La tarea fue marcada como completada exitosamente.",
         "estado": "completada",

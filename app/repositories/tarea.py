@@ -1,6 +1,6 @@
 # Repositorio para operaciones sobre tarea
 
-from datetime import date
+from app.utils.timezone import now_utc
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.models.tarea import Tarea
@@ -34,7 +34,8 @@ class TareaRepository(BaseRepository[Tarea]):
         
         # Crear la tarea
         tarea = Tarea(
-            fecha_creacion=date.today(),
+            # Keep DB column as Date for now but derive the date from UTC
+            fecha_creacion=now_utc().date(),
             estado_id=estado_inicial,
             id_supervisor=id_supervisor,
             id_reponedor=id_reponedor,
