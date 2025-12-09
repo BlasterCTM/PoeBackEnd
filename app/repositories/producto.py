@@ -6,24 +6,28 @@ from app.models.detalle_tarea import DetalleTarea
 from app.models.tarea import Tarea
 from sqlalchemy import or_, asc, desc, func
 
-def existe_codigo_unico(db: Session, codigo_unico: str, exclude_id: int = None) -> bool:
-    query = db.query(Producto).filter(func.lower(Producto.codigo_unico) == codigo_unico.lower())
+def existe_codigo_unico(db: Session, codigo_unico: str, id_empresa: int, exclude_id: int = None) -> bool:
+    query = db.query(Producto).filter(
+        func.lower(Producto.codigo_unico) == codigo_unico.lower(),
+        Producto.id_empresa == id_empresa
+    )
     if exclude_id:
         query = query.filter(Producto.id_producto != exclude_id)
     return db.query(query.exists()).scalar()
 
-def create_producto(db: Session, producto: ProductoCreate, id_usuario: int, codigo_unico: str = None):
-    # Validar unicidad de codigo_unico
+def create_producto(db: Session, producto: ProductoCreate, id_usuario: int, id_empresa: int, codigo_unico: str = None):
+    # Validar unicidad de codigo_unico POR EMPRESA
     codigo = codigo_unico or producto.codigo_unico
-    if existe_codigo_unico(db, codigo):
-        raise ValueError(f"Ya existe un producto con el código '{codigo}'.")
+    if existe_codigo_unico(db, codigo, id_empresa):
+        raise ValueError(f"Ya existe un producto con el código '{codigo}' en esta empresa.")
     db_producto = Producto(
         nombre=producto.nombre,
         categoria=producto.categoria,
         unidad_tipo=producto.unidad_tipo,
         unidad_cantidad=producto.unidad_cantidad,
         codigo_unico=codigo_unico,
-        id_usuario=id_usuario
+        id_usuario=id_usuario,
+        id_empresa=id_empresa
     )
     db.add(db_producto)
     db.commit()
@@ -32,13 +36,14 @@ def create_producto(db: Session, producto: ProductoCreate, id_usuario: int, codi
 
 def get_productos(
     db: Session,
+    id_empresa: int,
     page: int = 1,
     limit: int = 10,
     orden: str = "nombre",
     estado: str = None,
     id_usuario: int = None  # Nuevo parámetro opcional
 ):
-    query = db.query(Producto)
+    query = db.query(Producto).filter(Producto.id_empresa == id_empresa)
     if estado:
         query = query.filter(Producto.estado == estado)
     if id_usuario is not None:
@@ -61,15 +66,18 @@ def get_productos(
         "productos": productos
     }
 
-def get_producto_by_id(db: Session, id_producto: int) -> Producto:
-    return db.query(Producto).filter(Producto.id_producto == id_producto).first()
+def get_producto_by_id(db: Session, id_producto: int, id_empresa: int = None) -> Producto:
+    query = db.query(Producto).filter(Producto.id_producto == id_producto)
+    if id_empresa is not None:
+        query = query.filter(Producto.id_empresa == id_empresa)
+    return query.first()
 
 def update_producto(db: Session, db_producto: Producto, **cambios) -> Producto:
     if "codigo_unico" in cambios and cambios["codigo_unico"]:
         nuevo_codigo = cambios["codigo_unico"]
         if nuevo_codigo.lower() != db_producto.codigo_unico.lower():
-            if existe_codigo_unico(db, nuevo_codigo, exclude_id=db_producto.id_producto):
-                raise ValueError(f"Ya existe un producto con el código '{nuevo_codigo}'.")
+            if existe_codigo_unico(db, nuevo_codigo, db_producto.id_empresa, exclude_id=db_producto.id_producto):
+                raise ValueError(f"Ya existe un producto con el código '{nuevo_codigo}' en esta empresa.")
     for campo, valor in cambios.items():
         setattr(db_producto, campo, valor)
     db.commit()
@@ -89,11 +97,15 @@ def producto_vinculado_a_tareas_activas(db: Session, id_producto: int, estados_a
 
 def buscar_productos(
     db: Session,
+    id_empresa: int,
     nombre: str = None,
     categoria: str = None,
     id_usuario: int = None
 ):
-    query = db.query(Producto).filter(Producto.estado == "activo")
+    query = db.query(Producto).filter(
+        Producto.estado == "activo",
+        Producto.id_empresa == id_empresa
+    )
     if nombre:
         query = query.filter(func.lower(Producto.nombre).ilike(f"%{nombre.lower()}%"))
     if categoria:

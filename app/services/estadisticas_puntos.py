@@ -28,10 +28,14 @@ class EstadisticasPuntosService:
         fecha_fin: Optional[date] = None,
         id_producto: Optional[int] = None,
         id_reponedor: Optional[int] = None,
-        limite: int = 50
+        limite: int = 50,
+        id_empresa: Optional[int] = None,
+        es_superadmin: bool = False
     ) -> Dict[str, Any]:
         """
         Obtiene un ranking de los puntos de reposición más utilizados.
+        
+        **MULTI-TENANT:** Filtra por empresa (excepto SuperAdmin).
         
         Args:
             fecha_inicio: Fecha de inicio del período a analizar
@@ -39,6 +43,8 @@ class EstadisticasPuntosService:
             id_producto: ID del producto para filtrar (opcional)
             id_reponedor: ID del reponedor para filtrar (opcional)
             limite: Número máximo de puntos a retornar
+            id_empresa: ID de la empresa (para filtro multi-tenant)
+            es_superadmin: Si el usuario es SuperAdmin
             
         Returns:
             Dict con los filtros aplicados y el ranking de puntos
@@ -64,6 +70,10 @@ class EstadisticasPuntosService:
             
             # Aplicar filtros
             filtros = []
+            
+            # FILTRO MULTI-TENANT: Solo SuperAdmin puede ver todas las empresas
+            if not es_superadmin and id_empresa:
+                filtros.append(PuntoReposicion.id_empresa == id_empresa)
             
             if fecha_inicio:
                 filtros.append(Tarea.fecha_creacion >= fecha_inicio)

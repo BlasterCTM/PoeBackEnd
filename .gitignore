@@ -82,12 +82,12 @@ $RECYCLE.BIN/
 # *.sqlite3
 # test.db
 
-# Variables de entorno (comentadas para mantener en desarrollo)
-# .env
-# .env.local
-# .env.development.local
-# .env.test.local
-# .env.production.local
+# Variables de entorno
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Documentación generada temporalmente
 reporte_completo_corregido_poe.txt

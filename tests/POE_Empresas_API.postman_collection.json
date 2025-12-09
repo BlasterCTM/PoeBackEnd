@@ -1,0 +1,552 @@
+{
+	"info": {
+		"_postman_id": "empresa-api-collection",
+		"name": "POE - Empresas API",
+		"description": "Colección de endpoints para gestión de empresas en POE (Path Optimization Engine)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Autenticación",
+			"item": [
+				{
+					"name": "Login - Administrador",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token\", jsonData.access_token);",
+									"    pm.environment.set(\"refresh_token\", jsonData.refresh_token);",
+									"    console.log(\"Token guardado: \" + jsonData.access_token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "username",
+									"value": "admin@poe.com",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "admin123",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/usuarios/token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"usuarios",
+								"token"
+							]
+						},
+						"description": "Login como administrador para obtener el access token"
+					},
+					"response": []
+				},
+				{
+					"name": "Login - Admin Jumbo",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token_jumbo\", jsonData.access_token);",
+									"    pm.environment.set(\"refresh_token_jumbo\", jsonData.refresh_token);",
+									"    console.log(\"Token Jumbo guardado: \" + jsonData.access_token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "username",
+									"value": "mgonzalez@jumbo.cl",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "Jumbo2025!",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/usuarios/token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"usuarios",
+								"token"
+							]
+						},
+						"description": "Login como administrador de Jumbo (empresa recién creada)"
+					},
+					"response": []
+				},
+				{
+					"name": "Login - Admin Lider",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token_lider\", jsonData.access_token);",
+									"    pm.environment.set(\"refresh_token_lider\", jsonData.refresh_token);",
+									"    console.log(\"Token Lider guardado: \" + jsonData.access_token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "username",
+									"value": "cperez@lider.cl",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "Lider2025!",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/usuarios/token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"usuarios",
+								"token"
+							]
+						},
+						"description": "Login como administrador de Lider (para probar multi-tenant)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Registro de Empresas",
+			"item": [
+				{
+					"name": "Registrar Empresa + Admin",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"empresa\": {\n    \"nombre_empresa\": \"Supermercado Jumbo\",\n    \"rut_empresa\": \"76.123.456-7\",\n    \"direccion\": \"Av. Kennedy 9001, Las Condes\",\n    \"ciudad\": \"Santiago\",\n    \"region\": \"Región Metropolitana\",\n    \"telefono\": \"+56912345678\",\n    \"email\": \"contacto@jumbo.cl\"\n  },\n  \"admin_nombre\": \"María González\",\n  \"admin_correo\": \"mgonzalez@jumbo.cl\",\n  \"admin_contraseña\": \"Jumbo2025!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/empresas/registro",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"registro"
+							]
+						},
+						"description": "Registrar una nueva empresa con su usuario administrador (requiere autenticación como admin)"
+					},
+					"response": []
+				},
+				{
+					"name": "Registrar Empresa Lider",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"empresa\": {\n    \"nombre_empresa\": \"Supermercado Lider\",\n    \"rut_empresa\": \"77.987.654-3\",\n    \"direccion\": \"Av. Libertador Bernardo O'Higgins 3250\",\n    \"ciudad\": \"Santiago\",\n    \"region\": \"Región Metropolitana\",\n    \"telefono\": \"+56987654321\",\n    \"email\": \"contacto@lider.cl\"\n  },\n  \"admin_nombre\": \"Carlos Pérez\",\n  \"admin_correo\": \"cperez@lider.cl\",\n  \"admin_contraseña\": \"Lider2025!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/empresas/registro",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"registro"
+							]
+						},
+						"description": "Ejemplo de registro de segunda empresa"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Consultar Empresas",
+			"item": [
+				{
+					"name": "Listar Todas las Empresas",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/empresas/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								""
+							]
+						},
+						"description": "Listar todas las empresas (solo administradores)"
+					},
+					"response": []
+				},
+				{
+					"name": "Listar con Paginación",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/empresas/?skip=0&limit=10&estado=activo",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								""
+							],
+							"query": [
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "estado",
+									"value": "activo"
+								}
+							]
+						},
+						"description": "Listar empresas con paginación y filtro por estado"
+					},
+					"response": []
+				},
+				{
+					"name": "Ver Mi Empresa",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/empresas/mi-empresa",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"mi-empresa"
+							]
+						},
+						"description": "Ver información de mi propia empresa (cualquier usuario autenticado)"
+					},
+					"response": []
+				},
+				{
+					"name": "Ver Empresa por ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/empresas/1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"1"
+							]
+						},
+						"description": "Ver empresa específica por ID (solo admin o mismo tenant)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Actualizar Empresas",
+			"item": [
+				{
+					"name": "Actualizar Datos de Empresa",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"telefono\": \"+56912345679\",\n  \"email\": \"nuevo_contacto@jumbo.cl\",\n  \"direccion\": \"Nueva Dirección 123, Santiago\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/empresas/1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"1"
+							]
+						},
+						"description": "Actualizar información de una empresa (solo admin de la empresa)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. Estadísticas",
+			"item": [
+				{
+					"name": "Estadísticas de Empresas",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/empresas/estadisticas/resumen",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"estadisticas",
+								"resumen"
+							]
+						},
+						"description": "Obtener estadísticas de empresas (total, activas, inactivas)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "6. Eliminar/Desactivar",
+			"item": [
+				{
+					"name": "Desactivar Empresa",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/empresas/2",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"2"
+							]
+						},
+						"description": "Desactivar una empresa (soft delete - solo administradores)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "7. Casos de Error",
+			"item": [
+				{
+					"name": "Error - RUT Duplicado",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"empresa\": {\n    \"nombre_empresa\": \"Otra Empresa\",\n    \"rut_empresa\": \"76.123.456-7\",\n    \"direccion\": \"Alguna Dirección\",\n    \"ciudad\": \"Santiago\",\n    \"region\": \"RM\",\n    \"telefono\": \"+56911111111\",\n    \"email\": \"test@test.cl\"\n  },\n  \"admin_nombre\": \"Test Admin\",\n  \"admin_correo\": \"testadmin@test.cl\",\n  \"admin_contraseña\": \"Test123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/empresas/registro",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"registro"
+							]
+						},
+						"description": "Debe retornar error 400: Ya existe una empresa con ese RUT"
+					},
+					"response": []
+				},
+				{
+					"name": "Error - Email Admin Duplicado",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"empresa\": {\n    \"nombre_empresa\": \"Empresa Nueva\",\n    \"rut_empresa\": \"77.999.888-K\",\n    \"direccion\": \"Alguna Dirección\",\n    \"ciudad\": \"Valparaíso\",\n    \"region\": \"Valparaíso\",\n    \"telefono\": \"+56922222222\",\n    \"email\": \"nueva@empresa.cl\"\n  },\n  \"admin_nombre\": \"Otro Admin\",\n  \"admin_correo\": \"mgonzalez@jumbo.cl\",\n  \"admin_contraseña\": \"Test123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/empresas/registro",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"empresas",
+								"registro"
+							]
+						},
+						"description": "Debe retornar error 400: Ya existe un usuario con ese correo"
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		}
+	]
+}

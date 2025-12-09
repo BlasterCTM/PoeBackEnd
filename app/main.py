@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.config.settings import settings
 from app.core.database.database import init_db
+from app.core.key_vault import init_key_vault, get_secret
 from app.api.dependencies.database import get_database
-from app.api.v1.endpoints import usuarios, supervisor, productos, mapa, tareas, puntos, muebles
+from app.api.v1.endpoints import usuarios, supervisor, productos, mapa, tareas, puntos, muebles, empresas
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.security.auth import get_current_user as get_current_user_core
@@ -15,6 +16,9 @@ from app.core.database.database import get_db
 from fastapi.security import OAuth2PasswordBearer
 from app.core.database.init_data import init_estados_tarea
 from app.api.v1.endpoints import ruta, reporte, dashboard, resumen_semanal, estadisticas
+from app.api.v1.endpoints import cotizaciones, planes, facturas, actividades, backoffice
+from app.api.v1.endpoints import predicciones  # Módulo ML
+from app.api.v1.endpoints import auditoria  # Módulo de Auditoría
 
 
 app = FastAPI(
@@ -22,26 +26,30 @@ app = FastAPI(
     description=settings.PROJECT_DESCRIPTION,
     version=settings.PROJECT_VERSION,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    redirect_slashes=False  # Evita redirecciones que causan problemas CORS
 )
 
-# Configurar CORS
-origins = [
-    "http://localhost:3000",  # Para React
-    "http://localhost:4200",  # Para Angular
-    "http://127.0.0.1:5500",  # Para VS Code Live Server
-    "http://localhost:5173",  # Para Vite
+# Configurar CORS desde variable de entorno o usar defaults
+cors_origins = settings.CORS_ORIGINS.split(",") if settings.CORS_ORIGINS else [
+    "http://localhost:3000",
+    "http://localhost:4200",
+    "http://127.0.0.1:5500",
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:8081",
-    "http://localhost:8080",  # Para FastAPI en desarrollo
+    "http://localhost:8080",
+    "http://localhost:8082",
+    "https://poe-frontend-app.azurewebsites.net"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Incluir los routers
@@ -52,15 +60,65 @@ app.include_router(mapa.router)
 app.include_router(tareas.router)
 app.include_router(puntos.router)
 app.include_router(muebles.router)
+app.include_router(empresas.router, prefix="/empresas", tags=["Empresas"])
 app.include_router(ruta.router)
 app.include_router(reporte.router)
 app.include_router(dashboard.router)
 app.include_router(resumen_semanal.router, prefix="/reponedor", tags=["Resumen Semanal"])
 app.include_router(estadisticas.router, prefix="/admin/estadisticas", tags=["Estadísticas de Reposición"])
 
+# Routers del módulo B2B
+app.include_router(cotizaciones.router, prefix="/cotizaciones", tags=["Cotizaciones"])
+app.include_router(planes.router, prefix="/planes", tags=["Planes"])
+app.include_router(facturas.router, prefix="/facturas", tags=["Facturas"])
+app.include_router(actividades.router, prefix="/actividades", tags=["Actividades de Cliente"])
+
+# Router del módulo Backoffice/SuperAdmin
+app.include_router(backoffice.router, prefix="/backoffice", tags=["Backoffice"])
+
+# Router del módulo de Auditoría
+app.include_router(auditoria.router, prefix="/auditoria", tags=["Auditoría"])
+
+# Router del módulo ML/Predicciones
+app.include_router(predicciones.router, prefix="/api/v1", tags=["Predicciones ML"])
+
 # Inicializar la base de datos al arrancar la aplicación
 @app.on_event("startup")
 async def startup_event():
+    # Inicializar Key Vault (si está configurado) antes de inicializar la DB
+    try:
+        await init_key_vault()
+    except Exception:
+        # No bloquear el arranque si Key Vault no está disponible
+        pass
+
+    # Si Key Vault contiene credenciales, intentar aplicarlas a la configuración
+    try:
+        # Intentamos leer nombres comunes usados en settings
+        azure_pw = await get_secret("AZURE_POSTGRES_PASSWORD")
+        pw = await get_secret("POSTGRES_PASSWORD")
+        secret_key = await get_secret("SECRET_KEY")
+
+        if azure_pw:
+            try:
+                settings.AZURE_POSTGRES_PASSWORD = azure_pw
+            except Exception:
+                pass
+        if pw:
+            try:
+                settings.POSTGRES_PASSWORD = pw
+            except Exception:
+                pass
+        if secret_key:
+            try:
+                settings.SECRET_KEY = secret_key
+            except Exception:
+                pass
+    except Exception:
+        # No fallar si no se pueden leer secretos ahora
+        pass
+
+    # Inicializar DB y datos base
     init_db()
     init_estados_tarea()
 

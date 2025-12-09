@@ -42,14 +42,21 @@ async def listar_reponedores(
     Lista todos los reponedores disponibles en el sistema.
     
     **Acceso:** Solo administradores
+    **MULTI-TENANT:** Filtra por empresa (excepto SuperAdmin)
     
     **Respuesta:**
     - Lista de reponedores con información básica
     """
-    # Obtener todos los reponedores
-    reponedores = db.query(Usuario).filter(
+    # Query base de reponedores
+    query = db.query(Usuario).filter(
         Usuario.rol.has(nombre_rol=RolEnum.REPONEDOR.value)
-    ).all()
+    )
+    
+    # FILTRO MULTI-TENANT: Solo SuperAdmin puede ver todos
+    if current_user.rol.nombre_rol != RolEnum.SUPERADMIN.value:
+        query = query.filter(Usuario.id_empresa == current_user.id_empresa)
+    
+    reponedores = query.all()
     
     result = []
     for reponedor in reponedores:
@@ -57,7 +64,8 @@ async def listar_reponedores(
             "id_usuario": reponedor.id_usuario,
             "nombre": reponedor.nombre,
             "email": reponedor.correo,
-            "estado": reponedor.estado
+            "estado": reponedor.estado,
+            "id_empresa": reponedor.id_empresa
         })
     
     return {
@@ -81,6 +89,7 @@ async def obtener_historial_reponedor(
     Obtiene el historial de tareas de un reponedor específico.
     
     **Acceso:** Solo administradores
+    **MULTI-TENANT:** Valida que el reponedor pertenece a la empresa
     
     **Parámetros:**
     - `id_reponedor`: ID del reponedor
@@ -105,13 +114,18 @@ async def obtener_historial_reponedor(
                 detail="La fecha de inicio no puede ser mayor que la fecha de fin."
             )
         
+        # Verificar si es SuperAdmin
+        es_superadmin = current_user.rol.nombre_rol == RolEnum.SUPERADMIN.value
+        
         resultado = servicio.obtener_historial_tareas_reponedor(
             id_reponedor=id_reponedor,
             fecha_inicio=fecha_inicio,
             fecha_fin=fecha_fin,
             estado_filtro=estado,
             limit=limit,
-            offset=offset
+            offset=offset,
+            id_empresa=current_user.id_empresa,
+            es_superadmin=es_superadmin
         )
         
         return resultado
@@ -139,6 +153,7 @@ async def descargar_reporte_reponedor(
     Descarga un reporte del historial de tareas de un reponedor.
     
     **Acceso:** Solo administradores
+    **MULTI-TENANT:** Valida que el reponedor pertenece a la empresa
     
     **Parámetros:**
     - `id_reponedor`: ID del reponedor
@@ -167,13 +182,18 @@ async def descargar_reporte_reponedor(
                 detail="La fecha de inicio no puede ser mayor que la fecha de fin."
             )
         
+        # Verificar si es SuperAdmin
+        es_superadmin = current_user.rol.nombre_rol == RolEnum.SUPERADMIN.value
+        
         # Generar reporte según el formato
         if formato == "excel":
             archivo, nombre_archivo = servicio.generar_reporte_excel(
                 id_reponedor=id_reponedor,
                 fecha_inicio=fecha_inicio,
                 fecha_fin=fecha_fin,
-                estado_filtro=estado
+                estado_filtro=estado,
+                id_empresa=current_user.id_empresa,
+                es_superadmin=es_superadmin
             )
             
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -183,7 +203,9 @@ async def descargar_reporte_reponedor(
                 id_reponedor=id_reponedor,
                 fecha_inicio=fecha_inicio,
                 fecha_fin=fecha_fin,
-                estado_filtro=estado
+                estado_filtro=estado,
+                id_empresa=current_user.id_empresa,
+                es_superadmin=es_superadmin
             )
             
             media_type = "application/pdf"

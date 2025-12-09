@@ -57,3 +57,19 @@ def desasignar_punto_por_producto(db: Session, id_producto: int):
     db.commit()
     db.refresh(punto)
     return punto
+
+# Crear puntos para un mueble dado según filas/columnas
+def generar_puntos_mueble(db: Session, id_mueble: int, filas: int, columnas: int, id_empresa: int):
+    nuevos = []
+    for nivel in range(1, filas + 1):
+        for est in range(1, columnas + 1):
+            nuevos.append(PuntoReposicion(
+                id_mueble=id_mueble,
+                nivel=nivel,
+                estanteria=est,
+                id_producto=None,
+                id_usuario=None,
+                id_empresa=id_empresa,
+            ))
+    if nuevos:
+        db.bulk_save_objects(nuevos)

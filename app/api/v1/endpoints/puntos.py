@@ -8,6 +8,10 @@ from app.models.usuario import Usuario
 from app.models.punto_reposicion import PuntoReposicion
 from app.models.detalle_tarea import DetalleTarea
 from app.schemas.punto_reposicion import PuntoReposicionCreate
+from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.plan_limites import validar_limite_plan
+from app.utils.tenant import is_super_admin
+from app.core.security.auth import get_current_user
 
 router = APIRouter()
 
@@ -40,12 +44,21 @@ def verificar_disponibilidad_punto(id_punto: int, db: Session = Depends(get_db))
     }
 
 @router.post("/puntos", status_code=201)
-def crear_punto_reposicion(punto: PuntoReposicionCreate, db: Session = Depends(get_db)):
-    # Verifica si ya existe un punto igual en el mismo mueble, nivel y estantería
+def crear_punto_reposicion(
+    punto: PuntoReposicionCreate, 
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    # Validar límites del plan antes de crear punto
+    if not is_super_admin(current_user):
+        validar_limite_plan("puntos", current_user.id_empresa, db)
+    
+    # Verifica si ya existe un punto igual en el mismo mueble, nivel y estantería EN LA MISMA EMPRESA
     existente = db.query(PuntoReposicion).filter_by(
         id_mueble=punto.id_mueble,
         nivel=punto.nivel,
-        estanteria=punto.estanteria
+        estanteria=punto.estanteria,
+        id_empresa=current_user.id_empresa
     ).first()
     if existente:
         raise HTTPException(status_code=409, detail="Ya existe un punto de reposición con esos datos.")
@@ -54,7 +67,8 @@ def crear_punto_reposicion(punto: PuntoReposicionCreate, db: Session = Depends(g
         nivel=punto.nivel,
         estanteria=punto.estanteria,
         id_producto=punto.id_producto,
-        id_usuario=punto.id_usuario
+        id_usuario=punto.id_usuario,
+        id_empresa=current_user.id_empresa
     )
     db.add(nuevo_punto)
     db.commit()

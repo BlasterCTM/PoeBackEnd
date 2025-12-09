@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, ForeignKey
+from sqlalchemy import Column, Integer, ForeignKey, String
+from sqlalchemy.orm import relationship
 from app.core.database.database import Base
 
 class MuebleReposicion(Base):
@@ -7,3 +8,7 @@ class MuebleReposicion(Base):
     id_objeto = Column(Integer, ForeignKey("objeto_mapa.id_objeto"), nullable=False)
     filas = Column(Integer, nullable=False)
     columnas = Column(Integer, nullable=False)
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa", ondelete="CASCADE"), nullable=False)
+    direccion = Column(String(5), default="T", nullable=True)
+    objeto = relationship("ObjetoMapa")
+    puntos = relationship("PuntoReposicion", back_populates="mueble")

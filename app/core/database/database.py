@@ -17,7 +17,7 @@ class Database:
             max_overflow=10,
             pool_timeout=30,
             pool_recycle=1800,
-            echo=True  # Establecer en False en producción
+            echo=False  # Desactivado para reducir logs
         )
 
     def _create_session(self) -> sessionmaker:
@@ -47,5 +47,7 @@ class Database:
 # Instancia global de la base de datos
 db = Database()
 Base = db.Base
+engine = db.engine
+SessionLocal = db.SessionLocal
 get_db = db.get_db
 init_db = db.init_db

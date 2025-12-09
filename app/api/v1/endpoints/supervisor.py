@@ -10,6 +10,8 @@ from app.repositories.usuario import UsuarioRepository
 from app.repositories.supervision import SupervisionRepository
 from app.core.security.auth import get_current_user
 from app.models.usuario import RolEnum, Usuario
+from app.api.dependencies.plan_limites import validar_limite_plan
+from app.utils.tenant import is_super_admin
 
 router = APIRouter(
     prefix="/supervisor",
@@ -37,11 +39,11 @@ async def registrar_reponedor(
             detail="Solo los supervisores pueden registrar reponedores"
         )
     
-    # Verificar si el correo ya existe
-    if usuario_repo.get_by_email(db, reponedor.correo):
+    # Verificar si el correo ya existe EN LA EMPRESA
+    if usuario_repo.get_by_email(db, reponedor.correo, current_user.id_empresa):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="El correo electrónico ya está registrado"
+            detail="El correo electrónico ya está registrado en esta empresa"
         )
     
     # Obtener el rol de reponedor
@@ -52,19 +54,29 @@ async def registrar_reponedor(
             detail="Error al obtener el rol de reponedor"
         )
     
+    # Validar límites del plan antes de crear reponedor
+    if not is_super_admin(current_user):
+        validar_limite_plan("reponedores", current_user.id_empresa, db)
+    
     try:
-        # Crear el reponedor con rol predefinido
+        # Crear el reponedor con rol predefinido Y LA EMPRESA DEL SUPERVISOR
         nuevo_reponedor = usuario_repo.create_usuario(
             db=db,
             nombre=reponedor.nombre,
             correo=reponedor.correo,
             contraseña=reponedor.contraseña,
-            rol_id=rol_reponedor.id_rol
+            rol_id=rol_reponedor.id_rol,
+            id_empresa=current_user.id_empresa
         )
         
         # Asignar automáticamente el reponedor al supervisor actual
         supervision_repo = SupervisionRepository()
-        supervision_repo.asignar_reponedor(db, supervisor_id=current_user.id_usuario, reponedor_id=nuevo_reponedor.id_usuario)
+        supervision_repo.asignar_reponedor(
+            db, 
+            supervisor_id=current_user.id_usuario, 
+            reponedor_id=nuevo_reponedor.id_usuario,
+            id_empresa=current_user.id_empresa
+        )
         
         return UsuarioResponse(
             mensaje="Reponedor registrado y asignado exitosamente",
@@ -99,7 +111,11 @@ async def listar_reponedores(
     
     try:
         supervision_repo = SupervisionRepository()
-        reponedores = supervision_repo.get_reponedores_by_supervisor(db, current_user.id_usuario)
+        reponedores = supervision_repo.get_reponedores_by_supervisor(
+            db, 
+            current_user.id_usuario,
+            current_user.id_empresa
+        )
         
         if not reponedores:
             return ReponedoresResponse(
@@ -152,7 +168,7 @@ async def listar_reponedores_disponibles(
     
     try:
         supervision_repo = SupervisionRepository()
-        reponedores = supervision_repo.get_reponedores_disponibles(db)
+        reponedores = supervision_repo.get_reponedores_disponibles(db, current_user.id_empresa)
         
         if not reponedores:
             return ReponedoresDisponiblesResponse(
@@ -224,7 +240,7 @@ async def asignar_reponedor(
             )
             
         # Verificar que no esté asignado a otro supervisor
-        if supervision_repo.get_supervisor_of_reponedor(db, reponedor_id):
+        if supervision_repo.get_supervisor_of_reponedor(db, reponedor_id, current_user.id_empresa):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Este reponedor ya está asignado a otro supervisor"
@@ -234,7 +250,8 @@ async def asignar_reponedor(
         supervision_repo.asignar_reponedor(
             db=db,
             supervisor_id=current_user.id_usuario,
-            reponedor_id=reponedor_id
+            reponedor_id=reponedor_id,
+            id_empresa=current_user.id_empresa
         )
         
         return UsuarioResponse(
@@ -282,7 +299,7 @@ async def desasignar_reponedor(
             )
         
         # Verificar que el reponedor esté asignado a este supervisor
-        supervisor = supervision_repo.get_supervisor_of_reponedor(db, reponedor_id)
+        supervisor = supervision_repo.get_supervisor_of_reponedor(db, reponedor_id, current_user.id_empresa)
         if not supervisor or supervisor.id_usuario != current_user.id_usuario:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -290,7 +307,12 @@ async def desasignar_reponedor(
             )
         
         # Desasignar el reponedor
-        supervision_repo.desasignar_reponedor(db, current_user.id_usuario, reponedor_id)
+        supervision_repo.desasignar_reponedor(
+            db, 
+            current_user.id_usuario, 
+            reponedor_id,
+            current_user.id_empresa
+        )
         
         return UsuarioResponse(
             mensaje="Reponedor desasignado exitosamente",

@@ -10,6 +10,8 @@ class Tarea(Base):
     id_supervisor = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=False)
     id_reponedor = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
     fecha_hora_completada = Column(DateTime, nullable=True)
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa", ondelete="CASCADE"), nullable=False)
 
     # Relaciones
     detalles = relationship("DetalleTarea", back_populates="tarea")
+    empresa = relationship("Empresa", back_populates="tareas")

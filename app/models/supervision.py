@@ -11,6 +11,7 @@ class Supervision(Base):
     supervisor_id = Column(Integer, ForeignKey("usuario.id_usuario", ondelete="CASCADE"), nullable=False)
     reponedor_id = Column(Integer, ForeignKey("usuario.id_usuario", ondelete="CASCADE"), nullable=False)
     fecha_asignacion = Column(DateTime, default=datetime.utcnow)
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa", ondelete="CASCADE"), nullable=False)
     
     # Relaciones
     supervisor = relationship(
@@ -25,3 +26,4 @@ class Supervision(Base):
         backref="supervision_recibida",
         primaryjoin="and_(Supervision.reponedor_id==Usuario.id_usuario)"
     )
+    empresa = relationship("Empresa", back_populates="supervisiones")

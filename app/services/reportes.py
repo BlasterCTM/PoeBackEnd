@@ -39,7 +39,9 @@ class ReportesService:
         fecha_fin: Optional[date] = None,
         estado_filtro: Optional[str] = None,
         limit: int = 100,
-        offset: int = 0
+        offset: int = 0,
+        id_empresa: Optional[int] = None,
+        es_superadmin: bool = False
     ) -> Dict[str, Any]:
         """
         Obtiene el historial de tareas de un reponedor específico con filtros.
@@ -51,20 +53,28 @@ class ReportesService:
             estado_filtro: Estado de tarea para filtrar (opcional)
             limit: Límite de resultados
             offset: Offset para paginación
+            id_empresa: ID de la empresa (para filtro multi-tenant)
+            es_superadmin: Si el usuario es SuperAdmin
             
         Returns:
             Dict con el historial de tareas y metadatos
         """
         # Validar que el reponedor existe
-        reponedor = self.db.query(Usuario).filter(
+        query_reponedor = self.db.query(Usuario).filter(
             Usuario.id_usuario == id_reponedor,
             Usuario.rol.has(nombre_rol=RolEnum.REPONEDOR.value)
-        ).first()
+        )
+        
+        # FILTRO MULTI-TENANT: Validar que el reponedor pertenece a la empresa
+        if not es_superadmin and id_empresa:
+            query_reponedor = query_reponedor.filter(Usuario.id_empresa == id_empresa)
+        
+        reponedor = query_reponedor.first()
         
         if not reponedor:
             raise HTTPException(
                 status_code=404, 
-                detail="Reponedor no encontrado o no tiene el rol correcto."
+                detail="Reponedor no encontrado o no pertenece a tu empresa."
             )
         
         # Construir query base
@@ -191,10 +201,14 @@ class ReportesService:
         id_reponedor: int,
         fecha_inicio: Optional[date] = None,
         fecha_fin: Optional[date] = None,
-        estado_filtro: Optional[str] = None
+        estado_filtro: Optional[str] = None,
+        id_empresa: Optional[int] = None,
+        es_superadmin: bool = False
     ) -> Tuple[io.BytesIO, str]:
         """
         Genera un reporte en formato Excel (.xlsx) del historial de tareas.
+        
+        **MULTI-TENANT:** Valida que el reponedor pertenece a la empresa.
         
         Returns:
             Tuple con el archivo BytesIO y el nombre del archivo
@@ -206,7 +220,9 @@ class ReportesService:
             fecha_fin=fecha_fin,
             estado_filtro=estado_filtro,
             limit=10000,  # Límite alto para obtener todos los datos
-            offset=0
+            offset=0,
+            id_empresa=id_empresa,
+            es_superadmin=es_superadmin
         )
         
         # Crear DataFrame principal
@@ -279,10 +295,14 @@ class ReportesService:
         id_reponedor: int,
         fecha_inicio: Optional[date] = None,
         fecha_fin: Optional[date] = None,
-        estado_filtro: Optional[str] = None
+        estado_filtro: Optional[str] = None,
+        id_empresa: Optional[int] = None,
+        es_superadmin: bool = False
     ) -> Tuple[io.BytesIO, str]:
         """
         Genera un reporte en formato PDF del historial de tareas.
+        
+        **MULTI-TENANT:** Valida que el reponedor pertenece a la empresa.
         
         Returns:
             Tuple con el archivo BytesIO y el nombre del archivo
@@ -294,7 +314,9 @@ class ReportesService:
             fecha_fin=fecha_fin,
             estado_filtro=estado_filtro,
             limit=10000,
-            offset=0
+            offset=0,
+            id_empresa=id_empresa,
+            es_superadmin=es_superadmin
         )
         
         buffer = io.BytesIO()

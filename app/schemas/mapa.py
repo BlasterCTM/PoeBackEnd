@@ -35,8 +35,31 @@ class MapaOut(BaseModel):
     nombre: str
     ancho: int
     alto: int
+    activo: bool = False
 
 class MapeoReposicionResponse(BaseModel):
     mapa: Optional[MapaOut] = None
     ubicaciones: List[UbicacionOut]
     mensaje: Optional[str] = None
+
+# Listado general de objetos del mapa
+class ObjetoTipoListadoOut(BaseModel):
+    id: int
+    nombre: str
+    caminable: Optional[bool]
+
+class ObjetoListadoOut(BaseModel):
+    id_objeto: int
+    nombre: str
+    tipo: ObjetoTipoListadoOut
+
+# Inputs para guardar layout completo
+class UbicacionInput(BaseModel):
+    x: int
+    y: int
+    id_objeto_real: int
+
+# Eliminado: ObjetoNuevoInput (ya no se crean objetos al vuelo)
+
+class LayoutCompletoCreate(BaseModel):
+    ubicaciones: List[UbicacionInput]

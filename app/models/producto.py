@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import relationship
 from app.core.database.database import Base
 
 class Producto(Base):
@@ -8,7 +9,12 @@ class Producto(Base):
     categoria = Column(String(50), nullable=False)
     unidad_tipo = Column(String(20), nullable=False)
     unidad_cantidad = Column(Integer, nullable=False)
-    codigo_unico = Column(String(50), nullable=False, unique=True, index=True)
+    codigo_unico = Column(String(50), nullable=False, index=True)
     id_usuario = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=False)
     estado = Column(String(10), nullable=False, default="activo")
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa", ondelete="CASCADE"), nullable=False)
+    
+    # Relaciones
+    empresa = relationship("Empresa", back_populates="productos")
+    
     __table_args__ = (UniqueConstraint('codigo_unico', name='uq_codigo_unico_producto'),)
