@@ -209,7 +209,7 @@ def listar_empresas_backoffice(
     """
     require_super_admin(current_user)
     
-    query = db.query(Empresa).outerjoin(PlanEmpresa)
+    query = db.query(Empresa).outerjoin(PlanEmpresa).filter(Empresa.id_empresa != 0)
     
     if estado:
         query = query.filter(Empresa.estado == estado)
@@ -227,6 +227,7 @@ def listar_empresas_backoffice(
         resultado.append(EmpresaBackoffice(
             id_empresa=empresa.id_empresa,
             nombre_empresa=empresa.nombre_empresa,
+            id_plan=plan.id_plan if plan else None,
             rut_empresa=empresa.rut_empresa,
             direccion=empresa.direccion,
             ciudad=empresa.ciudad,

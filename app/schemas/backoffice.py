@@ -27,6 +27,7 @@ class EmpresaBackoffice(BaseModel):
     - Información sensible operativa
     """
     id_empresa: int
+    id_plan: Optional[int] = Field(None, description="ID del plan activo de la empresa")
     nombre_empresa: str
     rut_empresa: str
     direccion: Optional[str] = None
